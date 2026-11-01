@@ -12,5 +12,6 @@ screenshots
 .grok
 .node_modules.lock
 artifacts
+data/charts
 
 

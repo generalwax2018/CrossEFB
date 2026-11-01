@@ -4,6 +4,7 @@ import { nearestAirports, positionAlong, routeDistance } from "@/lib/efb/nav";
 import { loadStreetTile, streetTileIds, type StreetGeom } from "@/lib/efb/streets";
 import { useEfb } from "@/lib/efb/store";
 import type { Airport } from "@/lib/efb/types";
+import { containsBox, sectionalTiles, tileCenter, type ChartBox } from "@/lib/efb/web-mercator";
 
 let chartSize = { w: 800, h: 600 };
 
@@ -134,6 +135,8 @@ export function Chart() {
 
   const chartMode = useEfb((s) => s.chartMode);
   const [streets, setStreets] = useState<StreetGeom[]>([]);
+  const [sheets, setSheets] = useState<ChartBox[]>([]);
+  const [cycle, setCycle] = useState("");
   useEffect(() => {
     document.documentElement.dataset.chart = chartMode;
   }, [chartMode]);
@@ -148,6 +151,37 @@ export function Chart() {
       cancel = true;
     };
   }, [streetKey]);
+
+  const viewSouth = lat - size.h / pxPerNm / 120;
+  const viewNorth = lat + size.h / pxPerNm / 120;
+  const viewWest = lon - size.w / pxPerNm / (120 * Math.cos((lat * Math.PI) / 180));
+  const viewEast = lon + size.w / pxPerNm / (120 * Math.cos((lat * Math.PI) / 180));
+  const viewKey = [viewSouth, viewWest, viewNorth, viewEast].map((n) => n.toFixed(1)).join(",");
+  useEffect(() => {
+    let cancel = false;
+    const pull = () => {
+      const q = new URLSearchParams({
+        south: String(viewSouth),
+        west: String(viewWest),
+        north: String(viewNorth),
+        east: String(viewEast),
+      });
+      void fetch(`/api/charts/status?${q}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((body: { effective?: string; expires?: string; sheets?: ChartBox[] } | null) => {
+          if (cancel || !body?.sheets) return;
+          setSheets(body.sheets);
+          if (body.effective && body.expires) setCycle(`${body.effective} – ${body.expires}`);
+        })
+        .catch(() => undefined);
+    };
+    pull();
+    const id = setInterval(pull, 8000);
+    return () => {
+      cancel = true;
+      clearInterval(id);
+    };
+  }, [viewKey, viewSouth, viewWest, viewNorth, viewEast]);
 
   const streetDraw = useMemo(() => {
     const water: StreetGeom[] = [];
@@ -169,6 +203,15 @@ export function Chart() {
       hwy: mercPath(hwy),
     };
   }, [streets]);
+
+  const chartTiles = useMemo(
+    () =>
+      sectionalTiles(lat, lon, size.w, size.h, pxPerNm).filter((tile) => {
+        const center = tileCenter(tile.z, tile.x, tile.y);
+        return sheets.some((sheet) => containsBox(sheet, center.lat, center.lon));
+      }),
+    [lat, lon, size.w, size.h, pxPerNm, sheets],
+  );
 
   useLayoutEffect(() => {
     const wrap = wrapRef.current;
@@ -447,6 +490,21 @@ export function Chart() {
               strokeLinecap="round"
             />
           )}
+          {chartTiles.map((tile) => {
+            const n = 2 ** tile.z;
+            const s = STREET_U / n;
+            return (
+              <image
+                key={`${tile.z}/${tile.x}/${tile.y}`}
+                href={`/api/charts/tile/${tile.z}/${tile.x}/${tile.y}`}
+                x={(tile.x / n) * STREET_U}
+                y={(tile.y / n) * STREET_U}
+                width={s}
+                height={s}
+                preserveAspectRatio="none"
+              />
+            );
+          })}
         </g>
         {lats.map((glat) => {
           const y = toXY(glat, lon).y;
@@ -575,12 +633,18 @@ export function Chart() {
       </svg>
       <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-md bg-bg/80 px-2 py-1 text-xs text-muted">
         <div>Filled tower · Open CTAF</div>
+        <div>{cycle ? `FAA sectional · ${cycle}` : "Loading FAA sectional"}</div>
         <div>
-          Not a sectional ·{" "}
-          <a className="pointer-events-auto underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
-            OpenStreetMap
-          </a>
-          {" · OpenFreeMap"}
+          {chartTiles.length ? (
+            "Not a certified EFB. Check NOTAMs."
+          ) : (
+            <>
+              <a className="pointer-events-auto underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+                OpenStreetMap
+              </a>
+              {" until the sheet arrives"}
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -6,7 +6,7 @@ This is a **planning aid**, not a certified EFB. Do not use it as a sole source 
 
 ## What it does
 
-- Moving chart with public US airports (planning data, not a chart supplement), OpenStreetMap streets via OpenFreeMap, and Class B / C / D rings where the catalog has them
+- Moving chart on the current FAA VFR sectional. The app downloads the national set from the FAA and replaces it when the 56-day edition changes. OpenStreetMap streets show only where a sheet is not on disk yet. Class B / C / D rings come from the airport catalog.
 - Favored runway from the live METAR, nearest airports, and sunrise through civil twilight
 - Airport search, origin, destination, stops, and direct-to
 - Wind, TAS, groundspeed, magnetic course, ETE, and fuel against usable

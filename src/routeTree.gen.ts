@@ -10,33 +10,53 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiChartsStatusRouteImport } from './routes/api/charts/status'
+import { Route as ApiChartsTileZXYRouteImport } from './routes/api/charts/tile/$z/$x/$y'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiChartsStatusRoute = ApiChartsStatusRouteImport.update({
+  id: '/api/charts/status',
+  path: '/api/charts/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiChartsTileZXYRoute = ApiChartsTileZXYRouteImport.update({
+  id: '/api/charts/tile/$z/$x/$y',
+  path: '/api/charts/tile/$z/$x/$y',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/charts/status': typeof ApiChartsStatusRoute
+  '/api/charts/tile/$z/$x/$y': typeof ApiChartsTileZXYRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/charts/status': typeof ApiChartsStatusRoute
+  '/api/charts/tile/$z/$x/$y': typeof ApiChartsTileZXYRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/charts/status': typeof ApiChartsStatusRoute
+  '/api/charts/tile/$z/$x/$y': typeof ApiChartsTileZXYRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/api/charts/status' | '/api/charts/tile/$z/$x/$y'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/api/charts/status' | '/api/charts/tile/$z/$x/$y'
+  id: '__root__' | '/' | '/api/charts/status' | '/api/charts/tile/$z/$x/$y'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiChartsStatusRoute: typeof ApiChartsStatusRoute
+  ApiChartsTileZXYRoute: typeof ApiChartsTileZXYRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +68,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/charts/status': {
+      id: '/api/charts/status'
+      path: '/api/charts/status'
+      fullPath: '/api/charts/status'
+      preLoaderRoute: typeof ApiChartsStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/charts/tile/$z/$x/$y': {
+      id: '/api/charts/tile/$z/$x/$y'
+      path: '/api/charts/tile/$z/$x/$y'
+      fullPath: '/api/charts/tile/$z/$x/$y'
+      preLoaderRoute: typeof ApiChartsTileZXYRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiChartsStatusRoute: ApiChartsStatusRoute,
+  ApiChartsTileZXYRoute: ApiChartsTileZXYRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
