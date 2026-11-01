@@ -10,4 +10,7 @@ screenshots
 .nitro
 .vercel
 .grok
+.node_modules.lock
+artifacts
+
 
