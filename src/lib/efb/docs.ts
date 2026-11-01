@@ -77,6 +77,38 @@ export function windComponents(windFrom: number, windKts: number, rwyHdg: number
   return { head, cross: Math.abs(windKts * Math.sin(rad)) };
 }
 
+export function runwayEnds(rwy: string): { label: string; hdg: number }[] {
+  const match = rwy.match(/(\d{2})([LRC])?\/(\d{2})([LRC])?/);
+  if (!match) return [];
+  const end = (num: string, side?: string) => {
+    const n = Number(num);
+    return { label: `${num}${side ?? ""}`, hdg: n === 0 ? 360 : n * 10 };
+  };
+  return [end(match[1], match[2]), end(match[3], match[4])];
+}
+
+export function favoredRunway(
+  rwy: string,
+  windFrom: number | null,
+  windKts: number | null,
+): { label: string; hdg: number; head: number; cross: number; calm: boolean } | null {
+  const ends = runwayEnds(rwy);
+  if (!ends.length || windFrom == null || windKts == null) return null;
+  if (windKts < 3) return { ...ends[0], head: 0, cross: 0, calm: true };
+  let best = ends[0];
+  let bestHead = -Infinity;
+  let bestCross = 0;
+  for (const end of ends) {
+    const wind = windComponents(windFrom, windKts, end.hdg);
+    if (wind.head > bestHead) {
+      best = end;
+      bestHead = wind.head;
+      bestCross = wind.cross;
+    }
+  }
+  return { ...best, head: bestHead, cross: bestCross, calm: false };
+}
+
 export function densityAltitude(elevFt: number, tempC: number, altimInHg: number) {
   const pa = elevFt + (29.92 - altimInHg) * 1000;
   const isa = 15 - (pa / 1000) * 1.98;
@@ -207,7 +239,7 @@ export function scoreFrat(input: {
     {
       id: "night",
       label: "Night departure",
-      detail: input.night ? "Local hour is night" : "Day",
+      detail: input.night ? "After civil twilight" : "Before dusk",
       points: input.night ? 2 : 0,
       on: input.night,
       source: "auto",

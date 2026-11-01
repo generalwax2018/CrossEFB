@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { airportsNear, getAirport, ringsNm } from "@/lib/efb/airports";
-import { positionAlong, routeDistance } from "@/lib/efb/nav";
+import { nearestAirports, positionAlong, routeDistance } from "@/lib/efb/nav";
+import { loadStreetTile, streetTileIds, type StreetGeom } from "@/lib/efb/streets";
 import { useEfb } from "@/lib/efb/store";
 import type { Airport } from "@/lib/efb/types";
 
@@ -33,6 +34,78 @@ export function fitAirports(ids: string[]) {
 
 type Pt = { x: number; y: number };
 
+const TILE = 512;
+
+function mapZoom(pxPerNm: number, lat: number): number {
+  const cos = Math.max(0.2, Math.cos((lat * Math.PI) / 180));
+  return Math.max(0, Math.min(16, Math.log2(pxPerNm * cos * (21600 / TILE))));
+}
+
+function mercY(lat: number): number {
+  const r = (Math.max(-85, Math.min(85, lat)) * Math.PI) / 180;
+  const s = Math.sin(r);
+  return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
+}
+
+function latFromMercY(y: number): number {
+  const n = Math.PI * (1 - 2 * y);
+  return ((180 / Math.PI) * Math.atan(Math.sinh(n)));
+}
+
+function projectPoint(
+  plat: number,
+  plon: number,
+  lat: number,
+  lon: number,
+  pxPerNm: number,
+  w: number,
+  h: number,
+): Pt {
+  const world = TILE * 2 ** mapZoom(pxPerNm, lat);
+  const cx = (lon + 180) / 360;
+  const cy = mercY(lat);
+  let dx = (plon + 180) / 360 - cx;
+  if (dx > 0.5) dx -= 1;
+  if (dx < -0.5) dx += 1;
+  return { x: w / 2 + dx * world, y: h / 2 + (mercY(plat) - cy) * world };
+}
+
+function unproject(
+  x: number,
+  y: number,
+  lat: number,
+  lon: number,
+  pxPerNm: number,
+  w: number,
+  h: number,
+): { lat: number; lon: number } {
+  const world = TILE * 2 ** mapZoom(pxPerNm, lat);
+  const cx = (lon + 180) / 360;
+  const cy = mercY(lat);
+  let nx = cx + (x - w / 2) / world;
+  nx = ((nx % 1) + 1) % 1;
+  const ny = Math.max(0.001, Math.min(0.999, cy + (y - h / 2) / world));
+  let nextLon = nx * 360 - 180;
+  if (nextLon > 180) nextLon -= 360;
+  return { lat: latFromMercY(ny), lon: nextLon };
+}
+
+const STREET_U = 4096;
+
+function mercPath(list: StreetGeom[]): string {
+  let d = "";
+  for (const g of list) {
+    const pts = g.pts;
+    for (let i = 0; i < pts.length; i++) {
+      const x = ((pts[i][0] + 180) / 360) * STREET_U;
+      const y = mercY(pts[i][1]) * STREET_U;
+      d += `${i === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`;
+    }
+    if (g.closed) d += "Z";
+  }
+  return d;
+}
+
 function shownOnChart(airport: Airport, pxPerNm: number, selected: boolean, onRoute: boolean) {
   return selected || onRoute || pxPerNm > 4.5 || (pxPerNm > 1.7 && airport.cls !== "E") || airport.cls === "B";
 }
@@ -60,9 +133,42 @@ export function Chart() {
   const pinch = useRef<number | null>(null);
 
   const chartMode = useEfb((s) => s.chartMode);
+  const [streets, setStreets] = useState<StreetGeom[]>([]);
   useEffect(() => {
     document.documentElement.dataset.chart = chartMode;
   }, [chartMode]);
+  const streetKey = streetTileIds(lat, lon, size.w, size.h, pxPerNm).join(",");
+  useEffect(() => {
+    let cancel = false;
+    const ids = streetKey ? streetKey.split(",") : [];
+    void Promise.all(ids.map((id) => loadStreetTile(id))).then((groups) => {
+      if (!cancel) setStreets(groups.flat());
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [streetKey]);
+
+  const streetDraw = useMemo(() => {
+    const water: StreetGeom[] = [];
+    const river: StreetGeom[] = [];
+    const park: StreetGeom[] = [];
+    const road: StreetGeom[] = [];
+    const hwy: StreetGeom[] = [];
+    for (const g of streets) {
+      if (g.kind === "water") (g.closed ? water : river).push(g);
+      else if (g.kind === "park") park.push(g);
+      else if (g.kind === "road") road.push(g);
+      else hwy.push(g);
+    }
+    return {
+      water: mercPath(water),
+      river: mercPath(river),
+      park: mercPath(park),
+      road: mercPath(road),
+      hwy: mercPath(hwy),
+    };
+  }, [streets]);
 
   useLayoutEffect(() => {
     const wrap = wrapRef.current;
@@ -126,23 +232,22 @@ export function Chart() {
       const state = useEfb.getState();
       const factor = e.deltaY > 0 ? 0.9 : 1.11;
       const next = Math.min(48, Math.max(0.35, state.pxPerNm * factor));
-      const latUnder = state.lat - (y - rect.height / 2) / (60 * state.pxPerNm);
-      const lonUnder =
-        state.lon +
-        (x - rect.width / 2) / (Math.cos((state.lat * Math.PI) / 180) * 60 * state.pxPerNm);
-      const lat2 = latUnder + (state.lat - latUnder) * (state.pxPerNm / next);
-      const lon2 = lonUnder + (state.lon - lonUnder) * (state.pxPerNm / next);
-      state.setView(lat2, lon2, next);
+      const under = unproject(x, y, state.lat, state.lon, state.pxPerNm, rect.width, rect.height);
+      const world = TILE * 2 ** mapZoom(next, state.lat);
+      const cy = mercY(under.lat) - (y - rect.height / 2) / world;
+      let cx = (under.lon + 180) / 360 - (x - rect.width / 2) / world;
+      cx = ((cx % 1) + 1) % 1;
+      let lon2 = cx * 360 - 180;
+      if (lon2 > 180) lon2 -= 360;
+      state.setView(latFromMercY(cy), lon2, next);
     };
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => svg.removeEventListener("wheel", onWheel);
   }, []);
 
   const { w, h } = size;
-  const toXY = (plat: number, plon: number): Pt => ({
-    x: (plon - lon) * Math.cos((lat * Math.PI) / 180) * 60 * pxPerNm + w / 2,
-    y: (lat - plat) * 60 * pxPerNm + h / 2,
-  });
+  const toXY = (plat: number, plon: number): Pt =>
+    projectPoint(plat, plon, lat, lon, pxPerNm, w, h);
 
   const nmPerPx = 1 / pxPerNm;
   const latSpan = (h * nmPerPx) / 60;
@@ -181,25 +286,61 @@ export function Chart() {
     const routeIds = state.route;
     for (const airport of airportsNear(state.lat, state.lon, latSpanHit, lonSpanHit, 0.4)) {
       if (!shownOnChart(airport, state.pxPerNm, airport.icao === state.selected, routeIds.includes(airport.icao))) continue;
-      const px =
-        (airport.lon - state.lon) * Math.cos((state.lat * Math.PI) / 180) * 60 * state.pxPerNm +
-        rect.width / 2;
-      const py = (state.lat - airport.lat) * 60 * state.pxPerNm + rect.height / 2;
-      const d = Math.hypot(px - x, py - y);
+      const p = projectPoint(airport.lat, airport.lon, state.lat, state.lon, state.pxPerNm, rect.width, rect.height);
+      const d = Math.hypot(p.x - x, p.y - y);
       if (d < bestD) {
         bestD = d;
         best = airport;
       }
     }
-    if (best) state.focus(best.icao);
-    else state.select(null);
+    if (best) {
+      state.focus(best.icao);
+      return;
+    }
+    const project = (plat: number, plon: number) =>
+      projectPoint(plat, plon, state.lat, state.lon, state.pxPerNm, rect.width, rect.height);
+    let seg = -1;
+    let segD = 18;
+    for (let i = 0; i < routeIds.length - 1; i++) {
+      const a = getAirport(routeIds[i]);
+      const b = getAirport(routeIds[i + 1]);
+      if (!a || !b) continue;
+      const pa = project(a.lat, a.lon);
+      const pb = project(b.lat, b.lon);
+      const dx = pb.x - pa.x;
+      const dy = pb.y - pa.y;
+      const len2 = dx * dx + dy * dy;
+      if (len2 < 1) continue;
+      let t = ((x - pa.x) * dx + (y - pa.y) * dy) / len2;
+      t = Math.max(0, Math.min(1, t));
+      if (t < 0.08 || t > 0.92) continue;
+      const d = Math.hypot(x - (pa.x + t * dx), y - (pa.y + t * dy));
+      if (d < segD) {
+        segD = d;
+        seg = i;
+      }
+    }
+    if (seg < 0) {
+      state.select(null);
+      return;
+    }
+    const here = unproject(x, y, state.lat, state.lon, state.pxPerNm, rect.width, rect.height);
+    const from = routeIds[seg];
+    const to = routeIds[seg + 1];
+    const pick = nearestAirports(here.lat, here.lon, 8).find((n) => n.nm <= 20 && n.airport.icao !== from && n.airport.icao !== to);
+    if (pick) state.insertAt(seg + 1, pick.airport.icao);
   };
+
+  const streetWorld = TILE * 2 ** mapZoom(pxPerNm, lat);
+  const streetScale = streetWorld / STREET_U;
+  const streetTx = w / 2 - ((lon + 180) / 360) * streetWorld;
+  const streetTy = h / 2 - mercY(lat) * streetWorld;
 
   return (
     <div ref={wrapRef} className="relative h-full w-full" style={{ background: "var(--chart-paper)" }}>
       <svg
         ref={svgRef}
-        className="h-full w-full touch-none"
+        className="relative z-10 h-full w-full touch-none"
         viewBox={`0 0 ${w} ${h}`}
         role="img"
         aria-label="Moving chart"
@@ -238,10 +379,13 @@ export function Chart() {
           const dy = y - d.y;
           if (Math.hypot(dx, dy) > 5) d.moved = true;
           const s = useEfb.getState();
-          const nmpp = 1 / s.pxPerNm;
-          const dLat = (dy * nmpp) / 60;
-          const dLon = (-dx * nmpp) / (60 * Math.cos((d.lat * Math.PI) / 180));
-          s.setView(d.lat + dLat, d.lon + dLon);
+          const world = TILE * 2 ** mapZoom(s.pxPerNm, d.lat);
+          const cy = mercY(d.lat) - dy / world;
+          let cx = (d.lon + 180) / 360 - dx / world;
+          cx = ((cx % 1) + 1) % 1;
+          let nextLon = cx * 360 - 180;
+          if (nextLon > 180) nextLon -= 360;
+          s.setView(latFromMercY(cy), nextLon, s.pxPerNm);
         }}
         onPointerUp={(e) => {
           const d = drag.current;
@@ -261,7 +405,49 @@ export function Chart() {
           pinch.current = null;
         }}
       >
-        <rect width={w} height={h} fill="var(--chart-paper)" />
+        <rect width={w} height={h} fill="transparent" />
+        <g
+          pointerEvents="none"
+          transform={`matrix(${streetScale} 0 0 ${streetScale} ${streetTx} ${streetTy})`}
+        >
+          {streetDraw.water && (
+            <path d={streetDraw.water} fill="var(--chart-water)" stroke="none" />
+          )}
+          {streetDraw.park && <path d={streetDraw.park} fill="var(--chart-park)" stroke="none" />}
+          {streetDraw.river && (
+            <path
+              d={streetDraw.river}
+              fill="none"
+              stroke="var(--chart-water)"
+              strokeWidth={1.4}
+              vectorEffect="non-scaling-stroke"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          )}
+          {streetDraw.road && (
+            <path
+              d={streetDraw.road}
+              fill="none"
+              stroke="var(--chart-road)"
+              strokeWidth={1.15}
+              vectorEffect="non-scaling-stroke"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          )}
+          {streetDraw.hwy && (
+            <path
+              d={streetDraw.hwy}
+              fill="none"
+              stroke="var(--chart-hwy)"
+              strokeWidth={2.2}
+              vectorEffect="non-scaling-stroke"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          )}
+        </g>
         {lats.map((glat) => {
           const y = toXY(glat, lon).y;
           return (
@@ -387,8 +573,15 @@ export function Chart() {
           {scaleNm} NM
         </text>
       </svg>
-      <div className="pointer-events-none absolute left-3 top-3 rounded-md bg-bg/80 px-2 py-1 text-xs text-muted">
-        Filled tower · Open CTAF
+      <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-md bg-bg/80 px-2 py-1 text-xs text-muted">
+        <div>Filled tower · Open CTAF</div>
+        <div>
+          Not a sectional ·{" "}
+          <a className="pointer-events-auto underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+            OpenStreetMap
+          </a>
+          {" · OpenFreeMap"}
+        </div>
       </div>
     </div>
   );

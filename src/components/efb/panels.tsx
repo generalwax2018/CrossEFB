@@ -1,9 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronUp,
   ClipboardList,
   CloudSun,
+  List,
   LocateFixed,
   Map as MapIcon,
   Moon,
@@ -17,8 +18,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { getAirport, PRESETS, searchAirports } from "@/lib/efb/airports";
-import { buildLegs, fmtGal, fmtMin, fmtNm, hdgText, routeDistance, totals } from "@/lib/efb/nav";
+import { favoredRunway } from "@/lib/efb/docs";
+import { buildLegs, fmtGal, fmtMin, fmtNm, hdgText, nearestAirports, routeDistance, totals } from "@/lib/efb/nav";
 import { useEfb } from "@/lib/efb/store";
+import { fmtClock, isLocalNight, sunClock } from "@/lib/efb/sun";
 import type { Tab, WxBundle } from "@/lib/efb/types";
 import { fetchWeather } from "@/lib/efb/weather";
 import { fitAirports } from "./chart";
@@ -30,6 +33,7 @@ export function useWeather(icaos: string[]) {
   const [data, setData] = useState<WxBundle | null>(null);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  const req = useRef(0);
 
   const load = async (force: boolean) => {
     if (!key) {
@@ -40,19 +44,23 @@ export function useWeather(icaos: string[]) {
     const hit = wxCache.get(key);
     if (!force && hit && Date.now() - hit.at < 5 * 60 * 1000) {
       setData(hit.data);
-      setFailed(hit.data.source !== "live");
+      setFailed(false);
       return;
     }
+    const ticket = ++req.current;
     setLoading(true);
     try {
       const bundle = await fetchWeather({ data: { icaos } });
-      wxCache.set(key, { at: Date.now(), data: bundle });
+      if (ticket !== req.current) return;
+      const live = bundle.source === "live" && bundle.metars.length > 0;
+      if (live) wxCache.set(key, { at: Date.now(), data: bundle });
       setData(bundle);
-      setFailed(bundle.source !== "live" || bundle.metars.length === 0);
+      setFailed(!live);
     } catch {
+      if (ticket !== req.current) return;
       setFailed(true);
     } finally {
-      setLoading(false);
+      if (ticket === req.current) setLoading(false);
     }
   };
 
@@ -130,10 +138,21 @@ export function ChartTools() {
   const mode = useEfb((s) => s.chartMode);
   const setMode = useEfb((s) => s.setChartMode);
   const setView = useEfb((s) => s.setView);
+  const lat = useEfb((s) => s.lat);
+  const lon = useEfb((s) => s.lon);
+  const focus = useEfb((s) => s.focus);
   const [geoNote, setGeoNote] = useState("");
+  const [nearOpen, setNearOpen] = useState(false);
+  const nearest = nearOpen ? nearestAirports(lat, lon, 6) : [];
 
   return (
     <div className="absolute top-3 right-3 z-10 flex flex-col gap-2">
+      <ToolButton
+        label="Nearest airports"
+        onClick={() => setNearOpen((open) => !open)}
+      >
+        <List className="size-5" />
+      </ToolButton>
       <ToolButton
         label="My position"
         onClick={() => {
@@ -146,6 +165,7 @@ export function ChartTools() {
               setGeoNote("");
               const s = useEfb.getState();
               s.setView(pos.coords.latitude, pos.coords.longitude, Math.max(s.pxPerNm, 8));
+              setNearOpen(true);
             },
             () => setGeoNote("GPS blocked"),
             { enableHighAccuracy: true, timeout: 8000 },
@@ -178,6 +198,26 @@ export function ChartTools() {
       >
         <span className="text-lg leading-none">−</span>
       </ToolButton>
+      {nearOpen && (
+        <div className="absolute top-0 right-14 w-60 max-w-[70vw] rounded-md border border-line bg-bg/95 p-2">
+          <p className="px-2 py-1 text-xs text-muted">Nearest to the map</p>
+          {nearest.length === 0 && <p className="px-2 py-2 text-sm text-muted">None nearby</p>}
+          {nearest.map(({ airport, nm }) => (
+            <button
+              key={airport.icao}
+              className="flex h-11 w-full items-baseline gap-2 rounded-md px-2 text-left hover:bg-raised"
+              onClick={() => {
+                focus(airport.icao);
+                setNearOpen(false);
+              }}
+            >
+              <span className="font-mono text-sm text-amber">{airport.icao}</span>
+              <span className="min-w-0 flex-1 truncate text-sm">{airport.name}</span>
+              <span className="font-mono text-xs text-muted">{nm < 10 ? nm.toFixed(1) : Math.round(nm)}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {geoNote && (
         <span className="rounded-md bg-bg/90 px-2 py-1 text-center text-xs text-amber">{geoNote}</span>
       )}
@@ -214,7 +254,23 @@ export function AirportCard() {
   const addStop = useEfb((s) => s.addStop);
   const directTo = useEfb((s) => s.directTo);
   const select = useEfb((s) => s.select);
+  const setWind = useEfb((s) => s.setWind);
+  const setRwyHdg = useEfb((s) => s.setRwyHdg);
+  const wx = useWeather(airport ? [airport.icao] : []);
   if (!airport) return null;
+  const metar = wx.data?.metars.find((m) => m.icao === airport.icao);
+  const favored = favoredRunway(airport.rwy, metar?.wdir ?? null, metar?.wspd ?? null);
+  const windLine = !metar
+    ? wx.loading
+      ? "Wind loading"
+      : "No METAR for runway"
+    : metar.wdir == null
+      ? `Wind variable ${metar.wspd ?? 0} kt`
+      : favored?.calm
+        ? `Wind ${String(metar.wdir).padStart(3, "0")}/${metar.wspd ?? 0} · calm`
+        : favored
+          ? `Wind ${String(metar.wdir).padStart(3, "0")}/${metar.wspd ?? 0} · RWY ${favored.label} · ${Math.abs(Math.round(favored.head))} kt ${favored.head >= 0 ? "head" : "tail"} · ${Math.round(favored.cross)} kt cross`
+          : `Wind ${String(metar.wdir).padStart(3, "0")}/${metar.wspd ?? 0}`;
 
   return (
     <section className="pointer-events-auto absolute bottom-16 left-3 z-10 w-72 max-w-[calc(100%-4.5rem)] rounded-md border border-line bg-bg/95 p-3">
@@ -234,7 +290,19 @@ export function AirportCard() {
         {airport.rwy}
         {airport.freq ? ` · ${airport.freq}` : ""}
       </p>
-      <p className="mt-1 text-[11px] leading-snug text-muted">Class and frequency are planning data. Confirm them in the Chart Supplement.</p>
+      <p className="mt-1 font-mono text-xs text-fg">{windLine}</p>
+      {favored && !favored.calm && metar?.wdir != null && (
+        <button
+          className="mt-2 h-11 w-full rounded-md border border-line bg-surface text-sm hover:bg-raised"
+          onClick={() => {
+            setWind(metar.wdir ?? 0, metar.wspd ?? 0);
+            setRwyHdg(favored.hdg);
+          }}
+        >
+          Use RWY {favored.label} on the plan
+        </button>
+      )}
+      <p className="mt-1 text-xs leading-snug text-muted">Class and frequency are planning data. Confirm them in the Chart Supplement.</p>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <CardButton label="Origin" onClick={() => setOrigin(airport.icao)} />
         <CardButton label="Destination" onClick={() => setDest(airport.icao)} />
@@ -270,6 +338,10 @@ export function PlanPanel() {
   const legs = buildLegs(route, aircraft, windFrom, windKts);
   const sum = totals(legs);
   const overFuel = sum.gal > aircraft.usableGal;
+  const departHour = useEfb((s) => s.departHour);
+  const origin = route.length ? getAirport(route[0]) : undefined;
+  const sun = origin ? sunClock(origin.lat, origin.lon) : null;
+  const night = origin ? isLocalNight(origin.lat, origin.lon, departHour) : false;
 
   return (
     <div className="flex flex-col gap-4">
@@ -300,6 +372,15 @@ export function PlanPanel() {
             );
           })}
         </ol>
+        {route.length >= 2 && (
+          <p className="mt-2 text-xs text-muted">Tap the amber line to insert the nearest field.</p>
+        )}
+        {sun && (
+          <p className={`mt-1 font-mono text-xs ${night ? "text-amber" : "text-muted"}`}>
+            Sun {fmtClock(sun.riseMin)}–{fmtClock(sun.setMin)} · twilight {fmtClock(sun.civilStartMin)}–{fmtClock(sun.civilEndMin)}
+            {night ? " · night" : ""}
+          </p>
+        )}
       </div>
 
       {legs.length > 0 && (

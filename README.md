@@ -6,7 +6,8 @@ This is a **planning aid**, not a certified EFB. Do not use it as a sole source 
 
 ## What it does
 
-- Moving chart with public US airports (planning data, not a chart supplement), plus Class B / C / D rings where the catalog has them
+- Moving chart with public US airports (planning data, not a chart supplement), OpenStreetMap streets via OpenFreeMap, and Class B / C / D rings where the catalog has them
+- Favored runway from the live METAR, nearest airports, and sunrise through civil twilight
 - Airport search, origin, destination, stops, and direct-to
 - Wind, TAS, groundspeed, magnetic course, ETE, and fuel against usable
 - Live METAR and TAF from aviationweather.gov (no sample weather)

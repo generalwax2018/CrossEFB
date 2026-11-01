@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import { DEFAULT_LOADS, profileById, resolveAircraft } from "./aircraft";
 import { getAirport } from "./airports";
 import { buildLegs, totals } from "./nav";
+import { isLocalNight } from "./sun";
 import type { Aircraft, ChartMode, DocId, FratManual, LogEntry, Rental, Tab } from "./types";
 
 const emptyManual: FratManual = {
@@ -106,6 +107,7 @@ type EfbState = {
   setOrigin: (icao: string) => void;
   setDest: (icao: string) => void;
   addStop: (icao: string) => void;
+  insertAt: (index: number, icao: string) => void;
   directTo: (icao: string) => void;
   removeAt: (index: number) => void;
   move: (index: number, dir: -1 | 1) => void;
@@ -208,6 +210,14 @@ export const useEfb = create<EfbState>()(
             progressNm: 0,
           };
         }),
+      insertAt: (index, icao) =>
+        set((s) => {
+          const id = icao.toUpperCase();
+          const route = s.route.slice();
+          const at = Math.max(0, Math.min(index, route.length));
+          route.splice(at, 0, id);
+          return { route: cleanRoute(route), selected: id, flying: false, progressNm: 0 };
+        }),
       directTo: (icao) =>
         set((s) => {
           const id = icao.toUpperCase();
@@ -265,16 +275,18 @@ export const useEfb = create<EfbState>()(
           const aircraft = resolveAircraft(s.aircraft);
           const legs = buildLegs(s.route, aircraft, s.windFrom, s.windKts);
           const sum = totals(legs);
+          const origin = getAirport(s.route[0] ?? "");
+          const night = origin ? isLocalNight(origin.lat, origin.lon, s.departHour) : s.departHour >= 19 || s.departHour < 6;
           const entry: LogEntry = {
             id: `log-${Date.now()}`,
             date: new Date().toISOString().slice(0, 10),
             from: s.route[0] ?? "",
             to: s.route[s.route.length - 1] ?? "",
             total: Math.round((sum.min / 60) * 10) / 10 || 0,
-            night: s.departHour >= 19 || s.departHour < 6 ? Math.round((sum.min / 60) * 10) / 10 : 0,
+            night: night ? Math.round((sum.min / 60) * 10) / 10 : 0,
             approaches: 0,
-            dayLdg: s.departHour >= 19 || s.departHour < 6 ? 0 : 1,
-            nightLdg: s.departHour >= 19 || s.departHour < 6 ? 1 : 0,
+            dayLdg: night ? 0 : 1,
+            nightLdg: night ? 1 : 0,
             pic: s.rental.pic || "Self",
             remarks: s.route.join(" "),
             tail: aircraft.tail,

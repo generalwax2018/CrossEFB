@@ -12,6 +12,7 @@ import {
   windComponents,
 } from "@/lib/efb/docs";
 import { buildLegs, fmtGal, fmtMin, fmtNm, hdgText, totals } from "@/lib/efb/nav";
+import { fmtClock, isLocalNight, sunClock } from "@/lib/efb/sun";
 import { useEfb } from "@/lib/efb/store";
 import type { DocId, Metar } from "@/lib/efb/types";
 import { useWeather } from "./panels";
@@ -66,7 +67,8 @@ function useFlight() {
   });
   const fuelLeftGal = fuelGal - burned;
   const fuelMinLeft = aircraft.burnGph > 0 ? (fuelLeftGal / aircraft.burnGph) * 60 : 0;
-  const night = departHour >= 19 || departHour < 6;
+  const night = origin ? isLocalNight(origin.lat, origin.lon, departHour) : departHour >= 19 || departHour < 6;
+  const sun = origin ? sunClock(origin.lat, origin.lon) : null;
   const mountain =
     Math.abs((dest?.elev ?? 0) - (origin?.elev ?? 0)) > 3000 ||
     route.some((id) => (getAirport(id)?.elev ?? 0) > 7500);
@@ -95,6 +97,7 @@ function useFlight() {
     fuelLeftGal,
     fuelMinLeft,
     night,
+    sun,
     mountain,
   };
 }
@@ -669,6 +672,10 @@ export function DocumentDesk() {
   const setDoc = useEfb((s) => s.setDoc);
   const departHour = useEfb((s) => s.departHour);
   const setDepartHour = useEfb((s) => s.setDepartHour);
+  const route = useEfb((s) => s.route);
+  const origin = route.length ? getAirport(route[0]) : undefined;
+  const sun = origin ? sunClock(origin.lat, origin.lon) : null;
+  const night = origin ? isLocalNight(origin.lat, origin.lon, departHour) : false;
   const apply = useEfb((s) => s.applyProfile);
   const profileId = useEfb((s) => s.aircraft.profileId);
   const Active = SHEETS[doc] ?? NavlogSheet;
@@ -680,6 +687,12 @@ export function DocumentDesk() {
           <div>
             <h2 className="text-sm font-semibold tracking-wide">FLIGHT FILE</h2>
             <p className="text-xs text-muted">One plan fills every sheet.</p>
+            {sun && (
+              <p className={`font-mono text-xs ${night ? "text-amber" : "text-muted"}`}>
+                Sun {fmtClock(sun.riseMin)}–{fmtClock(sun.setMin)} · twilight {fmtClock(sun.civilStartMin)}–{fmtClock(sun.civilEndMin)}
+                {night ? " · night" : " · day"}
+              </p>
+            )}
           </div>
           <label className="text-xs text-muted">
             Depart hour

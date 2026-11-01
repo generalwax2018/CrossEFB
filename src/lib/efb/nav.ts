@@ -1,9 +1,23 @@
-import { getAirport } from "./airports";
-import type { Aircraft } from "./types";
+import { airportsNear, getAirport } from "./airports";
+import type { Aircraft, Airport } from "./types";
 
 const R_NM = 3440.065;
 
 export type LatLon = { lat: number; lon: number };
+
+export function nearestAirports(lat: number, lon: number, limit = 6): { airport: Airport; nm: number }[] {
+  const here = { lat, lon };
+  let found: Airport[] = [];
+  let pad = 0.35;
+  while (pad <= 5 && found.length < limit * 4) {
+    found = airportsNear(lat, lon, 0, 0, pad);
+    pad *= 1.7;
+  }
+  return found
+    .map((airport) => ({ airport, nm: haversineNm(here, airport) }))
+    .sort((a, b) => a.nm - b.nm || a.airport.icao.localeCompare(b.airport.icao))
+    .slice(0, limit);
+}
 
 export function haversineNm(a: LatLon, b: LatLon): number {
   const p1 = (a.lat * Math.PI) / 180;

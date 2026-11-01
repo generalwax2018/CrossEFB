@@ -22,6 +22,10 @@
   --chart-ring: #9bb0a4;
   --chart-route: #e2a63b;
   --chart-own: #f3f7f4;
+  --chart-water: #163848;
+  --chart-park: #1b3326;
+  --chart-road: #6d8578;
+  --chart-hwy: #b08948;
   color-scheme: dark;
 }
 
@@ -33,6 +37,10 @@
   --chart-ring: #3d5874;
   --chart-route: #9a4e12;
   --chart-own: #142018;
+  --chart-water: #c5d4de;
+  --chart-park: #d5e0c8;
+  --chart-road: #8a8172;
+  --chart-hwy: #8d5a22;
 }
 
 @layer base {
