@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { ActivePanel, AirportCard, ChartTools, InstrumentBar, SearchBox, SideNav, ZuluClock } from "./panels";
 import { Chart } from "./chart";
+import { DocumentDesk } from "./documents";
 import { useEfb } from "@/lib/efb/store";
 
 export function Shell() {
@@ -34,17 +35,25 @@ export function Shell() {
         </aside>
 
         <section className="relative min-w-0 flex-1">
-          <Chart />
-          <ChartTools />
-          <AirportCard />
-          {showPanel && (
-            <div className="absolute inset-0 z-20 overflow-auto bg-bg p-3 md:hidden">
-              <ActivePanel />
+          {tab === "docs" ? (
+            <div className="h-full overflow-auto bg-bg p-3">
+              <DocumentDesk />
             </div>
+          ) : (
+            <>
+              <Chart />
+              <ChartTools />
+              <AirportCard />
+              {showPanel && (
+                <div className="absolute inset-0 z-20 overflow-auto bg-bg p-3 md:hidden">
+                  <ActivePanel />
+                </div>
+              )}
+              <div className="absolute inset-x-0 bottom-0 z-10 border-t border-line bg-bg/95">
+                <InstrumentBar />
+              </div>
+            </>
           )}
-          <div className="absolute inset-x-0 bottom-0 z-10 border-t border-line bg-bg/95">
-            <InstrumentBar />
-          </div>
         </section>
       </div>
 

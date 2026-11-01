@@ -61,8 +61,32 @@
 
   button:focus-visible,
   input:focus-visible,
-  select:focus-visible {
+  select:focus-visible,
+  textarea:focus-visible {
     outline: 2px solid var(--color-amber);
     outline-offset: 2px;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  #flight-file,
+  #flight-file * {
+    visibility: visible;
+  }
+
+  #flight-file {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    background: #f4f1e8;
+    color: #1a1408;
+  }
+
+  .no-print {
+    display: none !important;
   }
 }

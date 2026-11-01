@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronUp,
+  ClipboardList,
   CloudSun,
   LocateFixed,
   Map as MapIcon,
@@ -24,7 +25,7 @@ import { fitAirports } from "./chart";
 
 const wxCache = new Map<string, { at: number; data: WxBundle }>();
 
-function useWeather(icaos: string[]) {
+export function useWeather(icaos: string[]) {
   const key = icaos.join(",");
   const [data, setData] = useState<WxBundle | null>(null);
   const [loading, setLoading] = useState(false);
@@ -261,6 +262,7 @@ export function PlanPanel() {
   const windKts = useEfb((s) => s.windKts);
   const setWind = useEfb((s) => s.setWind);
   const setRoute = useEfb((s) => s.setRoute);
+  const setTab = useEfb((s) => s.setTab);
   const removeAt = useEfb((s) => s.removeAt);
   const move = useEfb((s) => s.move);
   const focus = useEfb((s) => s.focus);
@@ -358,6 +360,14 @@ export function PlanPanel() {
           {fmtNm(sum.nm)} NM · {fmtMin(sum.min)} · {fmtGal(sum.gal)} gal
           {overFuel ? " · over usable" : ""}
         </p>
+      )}
+      {route.length >= 2 && (
+        <button
+          className="h-11 rounded-md bg-amber px-3 text-left text-sm font-medium text-ink"
+          onClick={() => setTab("docs")}
+        >
+          Open flight file
+        </button>
       )}
 
       <div className="flex flex-col gap-2">
@@ -460,7 +470,7 @@ export function WxPanel() {
 export function AircraftPanel() {
   const aircraft = useEfb((s) => s.aircraft);
   const setAircraft = useEfb((s) => s.setAircraft);
-  const fields: { key: keyof typeof aircraft; label: string; numeric?: boolean }[] = [
+  const fields: { key: "name" | "tail" | "tas" | "burnGph" | "usableGal" | "cruiseFt"; label: string; numeric?: boolean }[] = [
     { key: "name", label: "Aircraft" },
     { key: "tail", label: "Tail" },
     { key: "tas", label: "TAS kt", numeric: true },
@@ -473,7 +483,7 @@ export function AircraftPanel() {
     <div className="flex flex-col gap-3">
       <h2 className="text-sm font-semibold tracking-wide">AIRCRAFT</h2>
       <p className="text-sm text-muted">
-        Used for groundspeed, ETE, and fuel on the plan. Saved on this device.
+        Cruise numbers for the plan. Sample weight and performance profiles are on the flight file.
       </p>
       {fields.map((f) => (
         <label key={f.key} className="text-xs text-muted">
@@ -481,7 +491,7 @@ export function AircraftPanel() {
           <input
             className="mt-1 h-11 w-full rounded-md border border-line bg-surface px-3 text-sm text-fg"
             inputMode={f.numeric ? "decimal" : "text"}
-            value={aircraft[f.key]}
+            value={aircraft[f.key] ?? ""}
             onChange={(e) => {
               if (!f.numeric) {
                 setAircraft({ [f.key]: e.target.value });
@@ -504,6 +514,7 @@ const NAV: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "chart", label: "Chart", icon: MapIcon },
   { id: "plan", label: "Plan", icon: Route },
   { id: "wx", label: "Weather", icon: CloudSun },
+  { id: "docs", label: "File", icon: ClipboardList },
   { id: "aircraft", label: "Aircraft", icon: Plane },
 ];
 
@@ -514,7 +525,7 @@ export function SideNav({ mobile }: { mobile?: boolean }) {
   const active = tab === "chart" && !mobile ? "plan" : tab;
 
   return (
-    <div className={mobile ? "grid grid-cols-4" : "flex border-b border-line"}>
+    <div className={mobile ? "grid grid-cols-5" : "flex border-b border-line"}>
       {items.map((item) => {
         const Icon = item.icon;
         const on = active === item.id;
@@ -535,9 +546,8 @@ export function SideNav({ mobile }: { mobile?: boolean }) {
 
 export function ActivePanel() {
   const tab = useEfb((s) => s.tab);
-  const which = tab === "chart" ? "plan" : tab;
-  if (which === "wx") return <WxPanel />;
-  if (which === "aircraft") return <AircraftPanel />;
+  if (tab === "wx") return <WxPanel />;
+  if (tab === "aircraft") return <AircraftPanel />;
   return <PlanPanel />;
 }
 
