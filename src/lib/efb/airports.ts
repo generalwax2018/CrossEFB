@@ -1,4 +1,5 @@
 import type { Airport } from "./types";
+import generatedRows from "./us-airports.json";
 
 const A = (
   icao: string,
@@ -15,7 +16,7 @@ const A = (
   hdg?: number,
 ): Airport => ({ icao, name, city, lat, lon, elev, cls, ring, rwy, freq, varE, hdg });
 
-export const AIRPORTS: Airport[] = [
+const HAND: Airport[] = [
   A("KDEN", "Denver Intl", "Denver", 39.8561, -104.6737, 5434, "B", true, "16R/34L 12,000 ft", "133.30", 8, 170),
   A("KAPA", "Centennial", "Englewood", 39.5701, -104.8493, 5885, "D", true, "17L/35R 10,001 ft", "118.90", 8, 170),
   A("KBJC", "Rocky Mountain Metro", "Broomfield", 39.9088, -105.1172, 5673, "D", true, "12L/30R 9,000 ft", "118.60", 8, 120),
@@ -101,31 +102,115 @@ export const AIRPORTS: Airport[] = [
   A("KIAD", "Washington Dulles Intl", "Dulles", 38.9531, -77.4565, 312, "B", true, "01R/19L 11,500 ft", "120.45", -11, 10),
   A("KDCA", "Ronald Reagan Washington", "Washington", 38.8521, -77.0377, 15, "D", false, "01/19 7,169 ft", "119.10", -11, 10),
   A("KBWI", "Baltimore/Washington Intl", "Baltimore", 39.1754, -76.6683, 146, "C", true, "10/28 10,502 ft", "119.40", -11, 100),
+  A("KRDM", "Roberts Field", "Redmond", 44.2541, -121.15, 3082, "D", true, "05/23 7,038 ft", "124.50", 14, 50),
+  A("KBDN", "Bend Municipal", "Bend", 44.0946, -121.2002, 3459, "E", false, "17/35 5,201 ft", "123.00", 14, 170),
 ];
 
+type GenRow = [
+  string,
+  string,
+  string,
+  number,
+  number,
+  number,
+  Airport["cls"],
+  0 | 1,
+  string,
+  string,
+  number,
+  number | null,
+  string,
+  string,
+];
+
+function fromGenerated(row: GenRow): Airport {
+  const airport: Airport = {
+    icao: row[0],
+    name: row[1],
+    city: row[2],
+    lat: row[3],
+    lon: row[4],
+    elev: row[5],
+    cls: row[6],
+    ring: row[7] === 1,
+    rwy: row[8],
+    freq: row[9],
+    varE: row[10],
+  };
+  if (row[11] != null) airport.hdg = row[11];
+  if (row[12]) airport.lid = row[12];
+  if (row[13]) airport.iata = row[13];
+  return airport;
+}
+
+const handByIcao = new Map(HAND.map((a) => [a.icao, a]));
+const merged: Airport[] = [];
+const seen = new Set<string>();
+for (const row of generatedRows as GenRow[]) {
+  const generated = fromGenerated(row);
+  merged.push(handByIcao.get(generated.icao) ?? generated);
+  seen.add(generated.icao);
+}
+for (const airport of HAND) {
+  if (!seen.has(airport.icao)) merged.push(airport);
+}
+merged.sort((a, b) => a.icao.localeCompare(b.icao));
+
+export const AIRPORTS: Airport[] = merged;
+
 const BY_ICAO = new Map(AIRPORTS.map((a) => [a.icao, a]));
+const CELL = new Map<string, Airport[]>();
+for (const airport of AIRPORTS) {
+  const key = `${Math.floor(airport.lat)}:${Math.floor(airport.lon)}`;
+  const list = CELL.get(key);
+  if (list) list.push(airport);
+  else CELL.set(key, [airport]);
+}
 
 export function getAirport(icao: string): Airport | undefined {
   return BY_ICAO.get(icao.toUpperCase());
 }
 
+function codes(airport: Airport): string[] {
+  const id = airport.icao;
+  const short = id.startsWith("K") && id.length === 4 ? id.slice(1) : id;
+  const out = short === id ? [id] : [id, short];
+  if (airport.lid && !out.includes(airport.lid)) out.push(airport.lid);
+  if (airport.iata && !out.includes(airport.iata)) out.push(airport.iata);
+  return out;
+}
+
 export function searchAirports(q: string): Airport[] {
   const s = q.trim().toUpperCase();
   if (!s) return [];
-  const bare = s.replace(/^K/, "");
-  const scored = AIRPORTS.map((a) => {
-    const id = a.icao;
-    const short = id.replace(/^K/, "");
+  const scored: { a: Airport; score: number }[] = [];
+  for (const airport of AIRPORTS) {
+    const idents = codes(airport);
     let score = 0;
-    if (id === s || short === s) score = 100;
-    else if (id.startsWith(s) || short.startsWith(s)) score = 80;
-    else if (a.city.toUpperCase().startsWith(s)) score = 60;
-    else if (a.name.toUpperCase().includes(s) || a.city.toUpperCase().includes(s)) score = 40;
-    return { a, score };
-  })
-    .filter((x) => x.score > 0)
-    .sort((x, y) => y.score - x.score || x.a.icao.localeCompare(y.a.icao));
+    if (idents.some((id) => id === s)) score = 100;
+    else if (idents.some((id) => id.startsWith(s))) score = 80;
+    else if (airport.city.toUpperCase().startsWith(s)) score = 60;
+    else if (s.length >= 4 && (airport.name.toUpperCase().includes(s) || airport.city.toUpperCase().includes(s))) score = 40;
+    if (score) scored.push({ a: airport, score });
+  }
+  scored.sort((x, y) => y.score - x.score || x.a.icao.localeCompare(y.a.icao));
   return scored.slice(0, 8).map((x) => x.a);
+}
+
+export function airportsNear(lat: number, lon: number, latSpan: number, lonSpan: number, padDeg = 0.7): Airport[] {
+  const lat0 = Math.floor(lat - latSpan / 2 - padDeg);
+  const lat1 = Math.floor(lat + latSpan / 2 + padDeg);
+  const lon0 = Math.floor(lon - lonSpan / 2 - padDeg);
+  const lon1 = Math.floor(lon + lonSpan / 2 + padDeg);
+  if (lat1 - lat0 > 70 || lon1 - lon0 > 140) return AIRPORTS;
+  const out: Airport[] = [];
+  for (let la = lat0; la <= lat1; la++) {
+    for (let lo = lon0; lo <= lon1; lo++) {
+      const cell = CELL.get(`${la}:${lo}`);
+      if (cell) out.push(...cell);
+    }
+  }
+  return out;
 }
 
 export const PRESETS: { name: string; ids: string[] }[] = [
@@ -133,6 +218,7 @@ export const PRESETS: { name: string; ids: string[] }[] = [
   { name: "Front Range south", ids: ["KAPA", "KCOS", "KPUB"] },
   { name: "Into the mountains", ids: ["KAPA", "KEGE", "KASE"] },
   { name: "High and hot", ids: ["KAPA", "KLXV", "KGUC"] },
+  { name: "Central Oregon", ids: ["KRDM", "KBDN", "KS21"] },
 ];
 
 export function ringsNm(a: Airport): number[] {

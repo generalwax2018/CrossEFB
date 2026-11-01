@@ -26,6 +26,8 @@ export type Airport = {
   freq: string;
   varE: number;
   hdg?: number;
+  lid?: string;
+  iata?: string;
 };
 
 export type Station = {

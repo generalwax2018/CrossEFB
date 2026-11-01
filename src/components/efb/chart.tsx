@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AIRPORTS, getAirport, ringsNm } from "@/lib/efb/airports";
+import { airportsNear, getAirport, ringsNm } from "@/lib/efb/airports";
 import { positionAlong, routeDistance } from "@/lib/efb/nav";
 import { useEfb } from "@/lib/efb/store";
 import type { Airport } from "@/lib/efb/types";
@@ -32,6 +32,10 @@ export function fitAirports(ids: string[]) {
 }
 
 type Pt = { x: number; y: number };
+
+function shownOnChart(airport: Airport, pxPerNm: number, selected: boolean, onRoute: boolean) {
+  return selected || onRoute || pxPerNm > 4.5 || (pxPerNm > 1.7 && airport.cls !== "E") || airport.cls === "B";
+}
 
 export function Chart() {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -152,6 +156,7 @@ export function Chart() {
   for (let glon = lon0; glon <= lon + lonSpan / 2 + step; glon += step) lons.push(Number(glon.toFixed(2)));
 
   const routeSet = new Set(route);
+  const visible = airportsNear(lat, lon, latSpan, lonSpan);
   const routePts = route
     .map((id) => getAirport(id))
     .filter((a): a is Airport => Boolean(a))
@@ -171,7 +176,11 @@ export function Chart() {
     if (!rect) return;
     let best: Airport | null = null;
     let bestD = 22;
-    for (const airport of AIRPORTS) {
+    const latSpanHit = rect.height / (60 * state.pxPerNm);
+    const lonSpanHit = rect.width / (Math.cos((state.lat * Math.PI) / 180) * 60 * state.pxPerNm);
+    const routeIds = state.route;
+    for (const airport of airportsNear(state.lat, state.lon, latSpanHit, lonSpanHit, 0.4)) {
+      if (!shownOnChart(airport, state.pxPerNm, airport.icao === state.selected, routeIds.includes(airport.icao))) continue;
       const px =
         (airport.lon - state.lon) * Math.cos((state.lat * Math.PI) / 180) * 60 * state.pxPerNm +
         rect.width / 2;
@@ -276,10 +285,14 @@ export function Chart() {
           );
         })}
 
-        {AIRPORTS.map((airport) => {
+        {visible.map((airport) => {
           const rings = ringsNm(airport);
           if (!rings.length) return null;
+          if (airport.cls === "D" && pxPerNm < 2.2) return null;
+          if (airport.cls === "C" && pxPerNm < 1.05) return null;
           const c = toXY(airport.lat, airport.lon);
+          const maxR = rings[rings.length - 1] * pxPerNm;
+          if (c.x < -maxR || c.y < -maxR || c.x > w + maxR || c.y > h + maxR) return null;
           const dash = airport.cls === "D" ? "3 4" : airport.cls === "C" ? "7 4" : undefined;
           return rings.map((nm) => (
             <circle
@@ -305,18 +318,12 @@ export function Chart() {
           />
         )}
 
-        {AIRPORTS.map((airport) => {
+        {visible.map((airport) => {
           const p = toXY(airport.lat, airport.lon);
           if (p.x < -40 || p.y < -40 || p.x > w + 40 || p.y > h + 40) return null;
           const onRoute = routeSet.has(airport.icao);
           const isSel = selected === airport.icao;
-          const show =
-            isSel ||
-            onRoute ||
-            pxPerNm > 4.5 ||
-            (pxPerNm > 1.7 && airport.cls !== "E") ||
-            airport.cls === "B";
-          if (!show) return null;
+          if (!shownOnChart(airport, pxPerNm, isSel, onRoute)) return null;
           const towered = airport.cls !== "E";
           const mark = isSel || onRoute ? "var(--chart-route)" : "var(--chart-ink)";
           const label = pxPerNm > 5 || isSel || onRoute || airport.cls === "B";

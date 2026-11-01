@@ -234,6 +234,7 @@ export function AirportCard() {
         {airport.rwy}
         {airport.freq ? ` · ${airport.freq}` : ""}
       </p>
+      <p className="mt-1 text-[11px] leading-snug text-muted">Class and frequency are planning data. Confirm them in the Chart Supplement.</p>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <CardButton label="Origin" onClick={() => setOrigin(airport.icao)} />
         <CardButton label="Destination" onClick={() => setDest(airport.icao)} />
