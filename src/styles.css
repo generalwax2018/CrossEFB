@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0c1210;
+  --color-surface: #151c19;
+  --color-raised: #1e2924;
+  --color-fg: #e7f0ea;
+  --color-muted: #8aa094;
+  --color-line: #2c3b33;
+  --color-amber: #e2a63b;
+  --color-ink: #1a1408;
+  --font-sans: "Barlow", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --radius-card: 0.75rem;
+}
+
+:root {
+  --chart-paper: #121a17;
+  --chart-grid: #4a6858;
+  --chart-ink: #e4f0e8;
+  --chart-dim: #8eaa9c;
+  --chart-ring: #9bb0a4;
+  --chart-route: #e2a63b;
+  --chart-own: #f3f7f4;
+  color-scheme: dark;
+}
+
+[data-chart="day"] {
+  --chart-paper: #e6dcc4;
+  --chart-grid: #cbbfa3;
+  --chart-ink: #1c241c;
+  --chart-dim: #5c5344;
+  --chart-ring: #3d5874;
+  --chart-route: #9a4e12;
+  --chart-own: #142018;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    background: var(--color-bg);
+    color: var(--color-fg);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  input,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible {
+    outline: 2px solid var(--color-amber);
+    outline-offset: 2px;
+  }
+}

@@ -1,0 +1,388 @@
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { AIRPORTS, getAirport, ringsNm } from "@/lib/efb/airports";
+import { positionAlong, routeDistance } from "@/lib/efb/nav";
+import { useEfb } from "@/lib/efb/store";
+import type { Airport } from "@/lib/efb/types";
+
+let chartSize = { w: 800, h: 600 };
+
+export function setChartSize(w: number, h: number) {
+  chartSize = { w: Math.max(w, 240), h: Math.max(h, 240) };
+}
+
+export function fitAirports(ids: string[]) {
+  const pts = ids.map((id) => getAirport(id)).filter((a): a is Airport => Boolean(a));
+  if (!pts.length) return;
+  let minLat = 90;
+  let maxLat = -90;
+  let minLon = 180;
+  let maxLon = -180;
+  for (const p of pts) {
+    minLat = Math.min(minLat, p.lat);
+    maxLat = Math.max(maxLat, p.lat);
+    minLon = Math.min(minLon, p.lon);
+    maxLon = Math.max(maxLon, p.lon);
+  }
+  const midLat = (minLat + maxLat) / 2;
+  const midLon = (minLon + maxLon) / 2;
+  const nmH = Math.max((maxLat - minLat) * 60, 14);
+  const nmW = Math.max((maxLon - minLon) * 60 * Math.cos((midLat * Math.PI) / 180), 14);
+  const px = Math.min((chartSize.w - 96) / nmW, (chartSize.h - 140) / nmH);
+  useEfb.getState().setView(midLat, midLon, px);
+}
+
+type Pt = { x: number; y: number };
+
+export function Chart() {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [size, setSize] = useState({ w: 800, h: 600 });
+  const lat = useEfb((s) => s.lat);
+  const lon = useEfb((s) => s.lon);
+  const pxPerNm = useEfb((s) => s.pxPerNm);
+  const route = useEfb((s) => s.route);
+  const selected = useEfb((s) => s.selected);
+  const progressNm = useEfb((s) => s.progressNm);
+  const flying = useEfb((s) => s.flying);
+  const drag = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    lat: number;
+    lon: number;
+    moved: boolean;
+  } | null>(null);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<number | null>(null);
+
+  const chartMode = useEfb((s) => s.chartMode);
+  useEffect(() => {
+    document.documentElement.dataset.chart = chartMode;
+  }, [chartMode]);
+
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const apply = () => {
+      const rect = wrap.getBoundingClientRect();
+      const w = Math.max(240, rect.width);
+      const h = Math.max(240, rect.height);
+      setChartSize(w, h);
+      setSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
+    };
+    apply();
+    const obs = new ResizeObserver(apply);
+    obs.observe(wrap);
+    return () => obs.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const ids = useEfb.getState().route;
+    if (ids.length < 2) return;
+    const id = requestAnimationFrame(() => fitAirports(useEfb.getState().route));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  useEffect(() => {
+    if (!flying) return;
+    const total = routeDistance(route);
+    if (total < 0.5) {
+      useEfb.getState().setFlying(false);
+      return;
+    }
+    let progress = useEfb.getState().progressNm;
+    if (progress >= total) progress = 0;
+    let last = performance.now();
+    let raf = 0;
+    const nmPerSec = Math.max(total, 28) / 18;
+    const tick = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      progress += nmPerSec * dt;
+      if (progress >= total) {
+        useEfb.getState().setProgressNm(total);
+        useEfb.getState().setFlying(false);
+        return;
+      }
+      useEfb.getState().setProgressNm(progress);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [flying, route]);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = svg.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const state = useEfb.getState();
+      const factor = e.deltaY > 0 ? 0.9 : 1.11;
+      const next = Math.min(48, Math.max(0.35, state.pxPerNm * factor));
+      const latUnder = state.lat - (y - rect.height / 2) / (60 * state.pxPerNm);
+      const lonUnder =
+        state.lon +
+        (x - rect.width / 2) / (Math.cos((state.lat * Math.PI) / 180) * 60 * state.pxPerNm);
+      const lat2 = latUnder + (state.lat - latUnder) * (state.pxPerNm / next);
+      const lon2 = lonUnder + (state.lon - lonUnder) * (state.pxPerNm / next);
+      state.setView(lat2, lon2, next);
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const { w, h } = size;
+  const toXY = (plat: number, plon: number): Pt => ({
+    x: (plon - lon) * Math.cos((lat * Math.PI) / 180) * 60 * pxPerNm + w / 2,
+    y: (lat - plat) * 60 * pxPerNm + h / 2,
+  });
+
+  const nmPerPx = 1 / pxPerNm;
+  const latSpan = (h * nmPerPx) / 60;
+  const lonSpan = (w * nmPerPx) / (60 * Math.cos((lat * Math.PI) / 180));
+  const step = pxPerNm > 8 ? 0.25 : pxPerNm > 2.2 ? 0.5 : 1;
+  const lat0 = Math.floor((lat - latSpan / 2) / step) * step;
+  const lon0 = Math.floor((lon - lonSpan / 2) / step) * step;
+  const lats: number[] = [];
+  const lons: number[] = [];
+  for (let glat = lat0; glat <= lat + latSpan / 2 + step; glat += step) lats.push(Number(glat.toFixed(2)));
+  for (let glon = lon0; glon <= lon + lonSpan / 2 + step; glon += step) lons.push(Number(glon.toFixed(2)));
+
+  const routeSet = new Set(route);
+  const routePts = route
+    .map((id) => getAirport(id))
+    .filter((a): a is Airport => Boolean(a))
+    .map((a) => toXY(a.lat, a.lon));
+
+  const ship = route.length ? positionAlong(route, progressNm) : null;
+  const shipPt = ship && route.length >= 2 ? toXY(ship.lat, ship.lon) : null;
+
+  const scaleNm = pxPerNm > 8 ? 5 : pxPerNm > 2 ? 10 : 30;
+  const scalePx = scaleNm * pxPerNm;
+  const sx = w - scalePx - 20;
+  const sy = h - 78;
+
+  const hit = (x: number, y: number) => {
+    const state = useEfb.getState();
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    let best: Airport | null = null;
+    let bestD = 22;
+    for (const airport of AIRPORTS) {
+      const px =
+        (airport.lon - state.lon) * Math.cos((state.lat * Math.PI) / 180) * 60 * state.pxPerNm +
+        rect.width / 2;
+      const py = (state.lat - airport.lat) * 60 * state.pxPerNm + rect.height / 2;
+      const d = Math.hypot(px - x, py - y);
+      if (d < bestD) {
+        bestD = d;
+        best = airport;
+      }
+    }
+    if (best) state.focus(best.icao);
+    else state.select(null);
+  };
+
+  return (
+    <div ref={wrapRef} className="relative h-full w-full" style={{ background: "var(--chart-paper)" }}>
+      <svg
+        ref={svgRef}
+        className="h-full w-full touch-none"
+        viewBox={`0 0 ${w} ${h}`}
+        role="img"
+        aria-label="Moving chart"
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          pointers.current.set(e.pointerId, { x, y });
+          if (pointers.current.size === 2) {
+            const [a, b] = [...pointers.current.values()];
+            pinch.current = Math.hypot(a.x - b.x, a.y - b.y);
+            drag.current = null;
+            return;
+          }
+          const s = useEfb.getState();
+          drag.current = { id: e.pointerId, x, y, lat: s.lat, lon: s.lon, moved: false };
+        }}
+        onPointerMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x, y });
+          if (pointers.current.size >= 2 && pinch.current) {
+            const [a, b] = [...pointers.current.values()];
+            const dist = Math.hypot(a.x - b.x, a.y - b.y);
+            const s = useEfb.getState();
+            const next = Math.min(48, Math.max(0.35, s.pxPerNm * (dist / pinch.current)));
+            pinch.current = dist;
+            s.setView(s.lat, s.lon, next);
+            return;
+          }
+          const d = drag.current;
+          if (!d || d.id !== e.pointerId) return;
+          const dx = x - d.x;
+          const dy = y - d.y;
+          if (Math.hypot(dx, dy) > 5) d.moved = true;
+          const s = useEfb.getState();
+          const nmpp = 1 / s.pxPerNm;
+          const dLat = (dy * nmpp) / 60;
+          const dLon = (-dx * nmpp) / (60 * Math.cos((d.lat * Math.PI) / 180));
+          s.setView(d.lat + dLat, d.lon + dLon);
+        }}
+        onPointerUp={(e) => {
+          const d = drag.current;
+          pointers.current.delete(e.pointerId);
+          if (pointers.current.size < 2) pinch.current = null;
+          if (d && d.id === e.pointerId) {
+            if (!d.moved) {
+              const rect = e.currentTarget.getBoundingClientRect();
+              hit(e.clientX - rect.left, e.clientY - rect.top);
+            }
+            drag.current = null;
+          }
+        }}
+        onPointerCancel={(e) => {
+          pointers.current.delete(e.pointerId);
+          drag.current = null;
+          pinch.current = null;
+        }}
+      >
+        <rect width={w} height={h} fill="var(--chart-paper)" />
+        {lats.map((glat) => {
+          const y = toXY(glat, lon).y;
+          return (
+            <g key={`lat-${glat}`}>
+              <line x1={0} y1={y} x2={w} y2={y} stroke="var(--chart-grid)" strokeWidth={1} />
+              <text x={8} y={y - 4} fill="var(--chart-dim)" fontSize={11} fontFamily="IBM Plex Mono, ui-monospace, monospace">
+                {glat.toFixed(step < 1 ? 1 : 0)}°
+              </text>
+            </g>
+          );
+        })}
+        {lons.map((glon) => {
+          const x = toXY(lat, glon).x;
+          return (
+            <g key={`lon-${glon}`}>
+              <line x1={x} y1={0} x2={x} y2={h} stroke="var(--chart-grid)" strokeWidth={1} />
+              <text x={x + 4} y={16} fill="var(--chart-dim)" fontSize={11} fontFamily="IBM Plex Mono, ui-monospace, monospace">
+                {glon.toFixed(step < 1 ? 1 : 0)}°
+              </text>
+            </g>
+          );
+        })}
+
+        {AIRPORTS.map((airport) => {
+          const rings = ringsNm(airport);
+          if (!rings.length) return null;
+          const c = toXY(airport.lat, airport.lon);
+          const dash = airport.cls === "D" ? "3 4" : airport.cls === "C" ? "7 4" : undefined;
+          return rings.map((nm) => (
+            <circle
+              key={`${airport.icao}-${nm}`}
+              cx={c.x}
+              cy={c.y}
+              r={nm * pxPerNm}
+              fill="none"
+              stroke="var(--chart-ring)"
+              strokeWidth={airport.cls === "B" ? 1.4 : 1}
+              strokeDasharray={dash}
+            />
+          ));
+        })}
+
+        {routePts.length >= 2 && (
+          <polyline
+            points={routePts.map((p) => `${p.x},${p.y}`).join(" ")}
+            fill="none"
+            stroke="var(--chart-route)"
+            strokeWidth={2.5}
+            strokeLinejoin="round"
+          />
+        )}
+
+        {AIRPORTS.map((airport) => {
+          const p = toXY(airport.lat, airport.lon);
+          if (p.x < -40 || p.y < -40 || p.x > w + 40 || p.y > h + 40) return null;
+          const onRoute = routeSet.has(airport.icao);
+          const isSel = selected === airport.icao;
+          const show =
+            isSel ||
+            onRoute ||
+            pxPerNm > 4.5 ||
+            (pxPerNm > 1.7 && airport.cls !== "E") ||
+            airport.cls === "B";
+          if (!show) return null;
+          const towered = airport.cls !== "E";
+          const mark = isSel || onRoute ? "var(--chart-route)" : "var(--chart-ink)";
+          const label = pxPerNm > 5 || isSel || onRoute || airport.cls === "B";
+          const rad = airport.hdg !== undefined ? ((airport.hdg - 90) * Math.PI) / 180 : 0;
+          const len = Math.min(28, 1.1 * pxPerNm);
+          return (
+            <g key={airport.icao}>
+              {airport.hdg !== undefined && pxPerNm > 11 && (
+                <line
+                  x1={p.x - Math.cos(rad) * len}
+                  y1={p.y - Math.sin(rad) * len}
+                  x2={p.x + Math.cos(rad) * len}
+                  y2={p.y + Math.sin(rad) * len}
+                  stroke="var(--chart-dim)"
+                  strokeWidth={1.5}
+                />
+              )}
+              <circle
+                cx={p.x}
+                cy={p.y}
+                r={isSel ? 6 : 4}
+                fill={towered ? mark : "none"}
+                stroke={mark}
+                strokeWidth={1.5}
+              />
+              {label && (
+                <text
+                  x={p.x + 8}
+                  y={p.y + 4}
+                  fill="var(--chart-ink)"
+                  fontSize={12}
+                  fontWeight={isSel ? 600 : 500}
+                  fontFamily="IBM Plex Mono, ui-monospace, monospace"
+                >
+                  {airport.icao}
+                </text>
+              )}
+            </g>
+          );
+        })}
+
+        {ship && shipPt && (
+          <g transform={`translate(${shipPt.x} ${shipPt.y}) rotate(${ship.track})`}>
+            <polygon points="0,-12 7,10 0,5 -7,10" fill="var(--chart-own)" stroke="var(--chart-route)" strokeWidth={1} />
+          </g>
+        )}
+
+        <g stroke="var(--chart-ink)" strokeWidth={1.5}>
+          <line x1={sx} y1={sy} x2={sx + scalePx} y2={sy} />
+          <line x1={sx} y1={sy - 4} x2={sx} y2={sy + 4} />
+          <line x1={sx + scalePx} y1={sy - 4} x2={sx + scalePx} y2={sy + 4} />
+        </g>
+        <text
+          x={sx + scalePx / 2}
+          y={sy - 8}
+          fill="var(--chart-ink)"
+          fontSize={11}
+          textAnchor="middle"
+          fontFamily="IBM Plex Mono, ui-monospace, monospace"
+        >
+          {scaleNm} NM
+        </text>
+      </svg>
+      <div className="pointer-events-none absolute left-3 top-3 rounded-md bg-bg/80 px-2 py-1 text-xs text-muted">
+        Filled tower · Open CTAF
+      </div>
+    </div>
+  );
+}
