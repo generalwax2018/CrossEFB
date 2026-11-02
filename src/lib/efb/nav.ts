@@ -92,17 +92,28 @@ export type Leg = {
   nm: number;
   tc: number;
   mc: number;
+  /** Magnetic heading to fly after wind correction. */
+  mh: number;
   gs: number;
   wca: number;
   min: number;
   gal: number;
+  windFrom: number;
+  windKts: number;
+  /** Forecast temperature at altitude, °C, when the wind came from the FB product. */
+  oat: number | null;
+  windSource: "manual" | "forecast";
 };
+
+/** Wind lookup for a leg midpoint, or null to fall back to the manual wind. */
+export type WindLookup = (lat: number, lon: number) => { dir: number; spd: number; temp: number | null } | null;
 
 export function buildLegs(
   ids: string[],
   aircraft: Aircraft,
   windFrom: number,
   windKts: number,
+  lookup?: WindLookup,
 ): Leg[] {
   const legs: Leg[] = [];
   for (let i = 0; i < ids.length - 1; i++) {
@@ -112,10 +123,28 @@ export function buildLegs(
     const nm = haversineNm(a, b);
     const tc = trueCourse(a, b);
     const mc = magCourse(tc, (a.varE + b.varE) / 2);
-    const { gs, wca } = groundspeed(aircraft.tas, tc, windFrom, windKts);
+    const fc = lookup ? lookup((a.lat + b.lat) / 2, (a.lon + b.lon) / 2) : null;
+    const wFrom = fc ? fc.dir : windFrom;
+    const wKts = fc ? fc.spd : windKts;
+    const { gs, wca } = groundspeed(aircraft.tas, tc, wFrom, wKts);
     const min = gs > 1 ? (nm / gs) * 60 : Infinity;
     const gal = Number.isFinite(min) ? (min / 60) * aircraft.burnGph : Infinity;
-    legs.push({ from: a.icao, to: b.icao, nm, tc, mc, gs, wca, min, gal });
+    legs.push({
+      from: a.icao,
+      to: b.icao,
+      nm,
+      tc,
+      mc,
+      mh: wrap360(mc + wca),
+      gs,
+      wca,
+      min,
+      gal,
+      windFrom: wFrom,
+      windKts: wKts,
+      oat: fc ? fc.temp : null,
+      windSource: fc ? "forecast" : "manual",
+    });
   }
   return legs;
 }

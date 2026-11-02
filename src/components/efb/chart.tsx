@@ -1,9 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { airportsNear, getAirport, ringsNm } from "@/lib/efb/airports";
 import { nearestAirports, positionAlong, routeDistance } from "@/lib/efb/nav";
 import { loadStreetTile, streetTileIds, type StreetGeom } from "@/lib/efb/streets";
 import { useEfb } from "@/lib/efb/store";
 import { useTrack } from "@/lib/efb/track";
+import { useWeather } from "@/lib/efb/use-weather";
+import { useLive } from "@/lib/efb/live-store";
+import { ringContains as tfrContains, type MetarField } from "@/lib/efb/live";
 import type { WxAdvisories, WxArea } from "@/lib/efb/advisories";
 import type { Airport } from "@/lib/efb/types";
 import { containsBox, sectionalTiles, tileCenter, type ChartBox } from "@/lib/efb/web-mercator";
@@ -31,7 +34,8 @@ export function fitAirports(ids: string[]) {
   const midLon = (minLon + maxLon) / 2;
   const nmH = Math.max((maxLat - minLat) * 60, 14);
   const nmW = Math.max((maxLon - minLon) * 60 * Math.cos((midLat * Math.PI) / 180), 14);
-  const px = Math.min((chartSize.w - 96) / nmW, (chartSize.h - 140) / nmH);
+  // Leave room for the status chips, the tool stack, and the instrument strip.
+  const px = Math.min((chartSize.w - 170) / nmW, (chartSize.h - 240) / nmH);
   useEfb.getState().setView(midLat, midLon, px);
 }
 
@@ -188,15 +192,14 @@ export function Chart() {
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<number | null>(null);
 
-  const chartMode = useEfb((s) => s.chartMode);
   const showAdvisories = useEfb((s) => s.showAdvisories);
+  const wxIds = useMemo(() => [...new Set([...route, ...(selected ? [selected] : [])])].slice(0, 16), [route, selected]);
+  const routeWx = useWeather(wxIds);
+  const catOf = (icao: string): string | null => routeWx.data?.metars.find((m) => m.icao === icao)?.fltCat ?? null;
   const [streets, setStreets] = useState<StreetGeom[]>([]);
   const [sheets, setSheets] = useState<ChartBox[]>([]);
   const [cycle, setCycle] = useState("");
   const [wx, setWx] = useState<WxAdvisories | null>(null);
-  useEffect(() => {
-    document.documentElement.dataset.chart = chartMode;
-  }, [chartMode]);
   const streetKey = streetTileIds(lat, lon, size.w, size.h, pxPerNm).join(",");
   useEffect(() => {
     let cancel = false;
@@ -263,6 +266,36 @@ export function Chart() {
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [showAdvisories]);
+
+  // Flight-category dots for every reporting station in view.
+  const showMetars = useEfb((s) => s.showMetars);
+  const showTfrs = useEfb((s) => s.showTfrs);
+  const showGlide = useEfb((s) => s.showGlide);
+  const metars = useLive((s) => s.metars);
+  const tfrs = useLive((s) => s.tfrs);
+  const metarKey = [Math.floor(viewSouth), Math.floor(viewWest), Math.ceil(viewNorth), Math.ceil(viewEast)].join(",");
+  const metarsOn = showMetars && pxPerNm > 0.7;
+  useEffect(() => {
+    if (!metarsOn) return;
+    const [south, west, north, east] = metarKey.split(",").map(Number);
+    let cancel = false;
+    const pull = () => {
+      const q = new URLSearchParams({ south: String(south), west: String(west), north: String(north), east: String(east) });
+      void fetch(`/api/wx/metars?${q}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((body: MetarField | null) => {
+          if (!cancel && body && Array.isArray(body.stations)) useLive.getState().setMetars(body);
+        })
+        .catch(() => undefined);
+    };
+    const t = setTimeout(pull, 250);
+    const id = setInterval(pull, 5 * 60 * 1000);
+    return () => {
+      cancel = true;
+      clearTimeout(t);
+      clearInterval(id);
+    };
+  }, [metarsOn, metarKey]);
 
   const streetDraw = useMemo(() => {
     const water: StreetGeom[] = [];
@@ -402,10 +435,24 @@ export function Chart() {
   const shipPt = ship ? toXY(ship.lat, ship.lon) : null;
   const accuracyPx = live && live.accuracyM < 5000 ? (live.accuracyM / 1852) * pxPerNm : 0;
 
+  // No-wind glide range: height above the nearest field times the glide ratio.
+  const glideRatio = useEfb((s) => s.aircraft.glide ?? 9);
+  const cruiseFt = useEfb((s) => s.aircraft.cruiseFt);
+  const glide = (() => {
+    if (!showGlide || !ship || !shipPt) return null;
+    const altFt = live ? live.altFt : flying || progressNm > 0 ? cruiseFt : null;
+    if (altFt == null) return null;
+    const ground = nearestAirports(ship.lat, ship.lon, 1)[0]?.airport.elev ?? 0;
+    const agl = altFt - ground;
+    if (agl < 300) return null;
+    const nm = (agl * glideRatio) / 6076;
+    return { nm, px: nm * pxPerNm };
+  })();
+
   const scaleNm = pxPerNm > 8 ? 5 : pxPerNm > 2 ? 10 : 30;
   const scalePx = scaleNm * pxPerNm;
-  const sx = w - scalePx - 20;
-  const sy = h - 78;
+  const sx = w - scalePx - 76;
+  const sy = h - 96;
 
   const hit = (x: number, y: number) => {
     const state = useEfb.getState();
@@ -454,6 +501,10 @@ export function Chart() {
     }
     if (seg < 0) {
       state.select(null);
+      const at = unproject(x, y, state.lat, state.lon, state.pxPerNm, rect.width, rect.height);
+      const live = useLive.getState();
+      const tfr = state.showTfrs ? live.tfrs.tfrs.find((t) => t.rings.some((r) => tfrContains(r, at.lat, at.lon))) : undefined;
+      live.setPickedTfr(tfr ? tfr.id : null);
       return;
     }
     const here = unproject(x, y, state.lat, state.lon, state.pxPerNm, rect.width, rect.height);
@@ -582,6 +633,12 @@ export function Chart() {
               strokeLinecap="round"
             />
           )}
+        </g>
+        <g
+          pointerEvents="none"
+          className="sectional-tiles"
+          transform={`matrix(${streetScale} 0 0 ${streetScale} ${streetTx} ${streetTy})`}
+        >
           {chartTiles.map((tile) => {
             const n = 2 ** tile.z;
             const s = STREET_U / n;
@@ -602,7 +659,7 @@ export function Chart() {
           const y = toXY(glat, lon).y;
           return (
             <g key={`lat-${glat}`}>
-              <line x1={0} y1={y} x2={w} y2={y} stroke="var(--chart-grid)" strokeWidth={1} />
+              <line x1={0} y1={y} x2={w} y2={y} stroke="var(--chart-grid)" strokeWidth={1} strokeOpacity={0.7} />
               <text x={8} y={y - 4} fill="var(--chart-dim)" fontSize={11} fontFamily="IBM Plex Mono, ui-monospace, monospace">
                 {glat.toFixed(step < 1 ? 1 : 0)}°
               </text>
@@ -613,7 +670,7 @@ export function Chart() {
           const x = toXY(lat, glon).x;
           return (
             <g key={`lon-${glon}`}>
-              <line x1={x} y1={0} x2={x} y2={h} stroke="var(--chart-grid)" strokeWidth={1} />
+              <line x1={x} y1={0} x2={x} y2={h} stroke="var(--chart-grid)" strokeWidth={1} strokeOpacity={0.7} />
               <text x={x + 4} y={16} fill="var(--chart-dim)" fontSize={11} fontFamily="IBM Plex Mono, ui-monospace, monospace">
                 {glon.toFixed(step < 1 ? 1 : 0)}°
               </text>
@@ -717,14 +774,125 @@ export function Chart() {
           </g>
         )}
 
+        {showTfrs && tfrs.tfrs.length > 0 && (
+          <g data-tfr="1" pointerEvents="none">
+            {tfrs.tfrs.map((t) => {
+              const hit = t.rings.some((ring) => ringHits(ring, viewSouth - 0.5, viewWest - 0.5, viewNorth + 0.5, viewEast + 0.5));
+              if (!hit) return null;
+              const d = t.rings
+                .map(
+                  (ring) =>
+                    ring
+                      .map((pt, i) => {
+                        const p = toXY(pt[1], pt[0]);
+                        return `${i === 0 ? "M" : "L"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+                      })
+                      .join(" ") + "Z",
+                )
+                .join(" ");
+              const first = t.rings[0];
+              let cx = 0;
+              let cy = 0;
+              for (const [lo, la] of first) {
+                cx += lo;
+                cy += la;
+              }
+              const c = toXY(cy / first.length, cx / first.length);
+              return (
+                <g key={t.id}>
+                  <path d={d} fill="#ff3df0" fillOpacity={0.14} stroke="#ff3df0" strokeWidth={2} strokeDasharray="6 3" />
+                  {pxPerNm > 1.5 && (
+                    <text
+                      x={c.x}
+                      y={c.y}
+                      textAnchor="middle"
+                      fill="#ff3df0"
+                      stroke="var(--chart-paper)"
+                      strokeWidth={3}
+                      paintOrder="stroke"
+                      fontSize={11}
+                      fontWeight={700}
+                      fontFamily="IBM Plex Mono, ui-monospace, monospace"
+                    >
+                      TFR {t.id}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        )}
+
+        {metarsOn && (
+          <g data-metars="1" pointerEvents="none">
+            {metars.stations.map((m) => {
+              const color = catColor(m.cat);
+              if (!color) return null;
+              const p = toXY(m.lat, m.lon);
+              if (p.x < -10 || p.y < -10 || p.x > w + 10 || p.y > h + 10) return null;
+              const r = pxPerNm > 4 ? 7 : 5.5;
+              const len = m.wspd && m.wspd >= 5 && m.wdir != null ? Math.min(26, 8 + m.wspd) : 0;
+              const a = m.wdir != null ? ((m.wdir - 90) * Math.PI) / 180 : 0;
+              return (
+                <g key={m.id}>
+                  {len > 0 && (
+                    <line
+                      x1={Math.round(p.x + Math.cos(a) * r)}
+                      y1={Math.round(p.y + Math.sin(a) * r)}
+                      x2={Math.round(p.x + Math.cos(a) * (r + len))}
+                      y2={Math.round(p.y + Math.sin(a) * (r + len))}
+                      stroke={color}
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                    />
+                  )}
+                  <circle cx={p.x} cy={p.y} r={r} fill={color} fillOpacity={0.9} stroke="var(--chart-paper)" strokeWidth={1.5} />
+                </g>
+              );
+            })}
+          </g>
+        )}
+
         {routePts.length >= 2 && (
-          <polyline
-            points={routePts.map((p) => `${p.x},${p.y}`).join(" ")}
-            fill="none"
-            stroke="var(--chart-route)"
-            strokeWidth={2.5}
-            strokeLinejoin="round"
-          />
+          <g pointerEvents="none">
+            <polyline
+              points={routePts.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke="var(--chart-route-case)"
+              strokeOpacity={0.55}
+              strokeWidth={7}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            <polyline
+              points={routePts.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke="var(--chart-route)"
+              strokeWidth={3.5}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            {routePts.slice(1).map((b, i) => {
+              const a = routePts[i];
+              const len = Math.hypot(b.x - a.x, b.y - a.y);
+              if (len < 70) return null;
+              const ang = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+              const mx = (a.x + b.x) / 2;
+              const my = (a.y + b.y) / 2;
+              return (
+                <g key={`chev-${i}`} transform={`translate(${mx} ${my}) rotate(${ang})`}>
+                  <path
+                    d="M-6,-6.5 L7,0 L-6,6.5 L-2.5,0 Z"
+                    fill="var(--chart-route)"
+                    stroke="var(--chart-route-case)"
+                    strokeOpacity={0.6}
+                    strokeWidth={1.5}
+                    strokeLinejoin="round"
+                  />
+                </g>
+              );
+            })}
+          </g>
         )}
 
         {visible.map((airport) => {
@@ -742,29 +910,43 @@ export function Chart() {
             <g key={airport.icao}>
               {airport.hdg !== undefined && pxPerNm > 11 && (
                 <line
-                  x1={p.x - Math.cos(rad) * len}
-                  y1={p.y - Math.sin(rad) * len}
-                  x2={p.x + Math.cos(rad) * len}
-                  y2={p.y + Math.sin(rad) * len}
+                  x1={Math.round(p.x - Math.cos(rad) * len)}
+                  y1={Math.round(p.y - Math.sin(rad) * len)}
+                  x2={Math.round(p.x + Math.cos(rad) * len)}
+                  y2={Math.round(p.y + Math.sin(rad) * len)}
                   stroke="var(--chart-dim)"
                   strokeWidth={1.5}
                 />
               )}
+              {(() => {
+                const cat = onRoute || isSel ? catOf(airport.icao) : null;
+                const color = catColor(cat);
+                return color ? (
+                  <circle cx={p.x} cy={p.y} r={isSel ? 9 : 8} fill="none" stroke={color} strokeWidth={3} strokeOpacity={0.95}>
+                    <title>{`${airport.icao} ${cat}`}</title>
+                  </circle>
+                ) : null;
+              })()}
+              {isSel && <circle cx={p.x} cy={p.y} r={14} fill="var(--chart-route)" fillOpacity={0.18} stroke="var(--chart-route)" strokeWidth={1.5} />}
               <circle
                 cx={p.x}
                 cy={p.y}
-                r={isSel ? 6 : 4}
+                r={isSel ? 6 : onRoute ? 5 : 4}
                 fill={towered ? mark : "none"}
                 stroke={mark}
                 strokeWidth={1.5}
               />
               {label && (
                 <text
-                  x={p.x + 8}
+                  x={p.x + (isSel ? 10 : 8)}
                   y={p.y + 4}
-                  fill="var(--chart-ink)"
-                  fontSize={12}
-                  fontWeight={isSel ? 600 : 500}
+                  fill={isSel || onRoute ? "var(--chart-route)" : "var(--chart-ink)"}
+                  stroke="var(--chart-paper)"
+                  strokeWidth={3}
+                  strokeOpacity={0.85}
+                  paintOrder="stroke"
+                  fontSize={isSel ? 13 : 12}
+                  fontWeight={isSel || onRoute ? 700 : 500}
                   fontFamily="IBM Plex Mono, ui-monospace, monospace"
                 >
                   {airport.icao}
@@ -774,22 +956,51 @@ export function Chart() {
           );
         })}
 
+        {glide && shipPt && (
+          <g pointerEvents="none">
+            <circle
+              cx={shipPt.x}
+              cy={shipPt.y}
+              r={glide.px}
+              fill="var(--chart-own)"
+              fillOpacity={0.05}
+              stroke="var(--chart-own)"
+              strokeWidth={1.5}
+              strokeDasharray="8 5"
+            />
+            <text
+              x={shipPt.x}
+              y={shipPt.y - glide.px - 6}
+              textAnchor="middle"
+              fill="var(--chart-own)"
+              stroke="var(--chart-paper)"
+              strokeWidth={3}
+              paintOrder="stroke"
+              fontSize={11}
+              fontFamily="IBM Plex Mono, ui-monospace, monospace"
+            >
+              {`GLIDE ${glide.nm.toFixed(1)} NM · no wind`}
+            </text>
+          </g>
+        )}
+
         {ship && shipPt && (
           <g transform={`translate(${shipPt.x} ${shipPt.y})`}>
             {accuracyPx > 4 && (
               <circle r={accuracyPx} fill="none" stroke="var(--chart-own)" strokeWidth={1} strokeDasharray="3 3" />
             )}
+            <circle r={22} fill="var(--chart-own)" fillOpacity={0.12} />
             {ship.track == null ? (
               <circle r={6} fill="var(--chart-own)" stroke="var(--chart-route)" strokeWidth={1.5} />
             ) : (
               <g transform={`rotate(${ship.track})`}>
-                <polygon points="0,-12 7,10 0,5 -7,10" fill="var(--chart-own)" stroke="var(--chart-route)" strokeWidth={1} />
+                <polygon points="0,-15 9,12 0,6 -9,12" fill="var(--chart-own)" stroke="var(--chart-route-case)" strokeWidth={1.5} strokeLinejoin="round" />
               </g>
             )}
           </g>
         )}
 
-        <g stroke="var(--chart-ink)" strokeWidth={1.5}>
+        <g stroke="var(--chart-ink)" strokeWidth={1.5} pointerEvents="none">
           <line x1={sx} y1={sy} x2={sx + scalePx} y2={sy} />
           <line x1={sx} y1={sy - 4} x2={sx} y2={sy + 4} />
           <line x1={sx + scalePx} y1={sy - 4} x2={sx + scalePx} y2={sy + 4} />
@@ -798,6 +1009,9 @@ export function Chart() {
           x={sx + scalePx / 2}
           y={sy - 8}
           fill="var(--chart-ink)"
+          stroke="var(--chart-paper)"
+          strokeWidth={3}
+          paintOrder="stroke"
           fontSize={11}
           textAnchor="middle"
           fontFamily="IBM Plex Mono, ui-monospace, monospace"
@@ -805,32 +1019,59 @@ export function Chart() {
           {scaleNm} NM
         </text>
       </svg>
-      <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-md bg-bg/80 px-2 py-1 text-xs text-muted">
-        <div>Filled tower · Open CTAF</div>
-        <div>{cycle ? `FAA sectional · ${cycle}` : "Loading FAA sectional"}</div>
-        <div>
-          {showAdvisories
-            ? wx?.fetchedAt
-              ? `NWS · ${clockZ(wx.fetchedAt)}${wx.stale ? " · last copy" : ""}${wx.valid ? ` · valid ${clockZ(wx.valid)}` : ""} · ${
+      <div className="pointer-events-none absolute top-3 left-3 z-10 flex max-w-[calc(100%-5.5rem)] flex-col items-start gap-1.5">
+        <StatusChip tone={chartTiles.length ? "ok" : "wait"}>
+          {cycle ? `Sectional ${cycle}` : "Loading FAA sectional"}
+        </StatusChip>
+        {showAdvisories && (
+          <StatusChip tone={wx?.fetchedAt ? (wx.stale ? "wait" : "ok") : "wait"}>
+            {wx?.fetchedAt
+              ? `NWS ${clockZ(wx.fetchedAt)}${wx.stale ? " · last copy" : ""} · ${
                   overheadLabels(wx.areas, tracking && fix ? fix.lat : lat, tracking && fix ? fix.lon : lon).join(" · ") ||
-                  "none overhead"
+                  "nothing overhead"
                 }`
-              : "Loading advisories"
-            : "Advisories hidden"}
-        </div>
-        <div>
-          {chartTiles.length ? (
-            "Not a certified EFB. Check NOTAMs."
-          ) : (
-            <>
-              <a className="pointer-events-auto underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
-                OpenStreetMap
-              </a>
-              {" until the sheet arrives"}
-            </>
-          )}
-        </div>
+              : "Loading advisories"}
+          </StatusChip>
+        )}
+        {showTfrs && tfrs.fetchedAt && (
+          <StatusChip tone={tfrs.stale ? "wait" : "ok"}>
+            {`${tfrs.tfrs.filter((t) => t.rings.some((ring) => ringHits(ring, viewSouth, viewWest, viewNorth, viewEast))).length} TFR in view · ${tfrs.tfrs.length} US`}
+          </StatusChip>
+        )}
+        {!chartTiles.length && (
+          <span className="pointer-events-auto rounded-full px-2 text-[0.625rem] text-[var(--chart-dim)]">
+            ©{" "}
+            <a className="underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+              OpenStreetMap
+            </a>{" "}
+            until the sheet arrives
+          </span>
+        )}
       </div>
     </div>
   );
+}
+
+function StatusChip({ tone, children }: { tone: "ok" | "wait"; children: ReactNode }) {
+  return (
+    <span className="glass flex max-w-full items-center gap-1.5 truncate rounded-full px-2.5 py-1 font-mono text-[0.6875rem] text-muted">
+      <span className={`size-1.5 shrink-0 rounded-full ${tone === "ok" ? "bg-good" : "animate-pulse bg-warn"}`} />
+      <span className="truncate">{children}</span>
+    </span>
+  );
+}
+
+function catColor(cat: string | null): string | null {
+  switch (cat) {
+    case "VFR":
+      return "var(--color-vfr)";
+    case "MVFR":
+      return "var(--color-mvfr)";
+    case "IFR":
+      return "var(--color-ifr)";
+    case "LIFR":
+      return "var(--color-lifr)";
+    default:
+      return null;
+  }
 }

@@ -10,13 +10,21 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiAirspaceTfrsRouteImport } from './routes/api/airspace/tfrs'
 import { Route as ApiChartsStatusRouteImport } from './routes/api/charts/status'
 import { Route as ApiWxAdvisoriesRouteImport } from './routes/api/wx/advisories'
+import { Route as ApiWxMetarsRouteImport } from './routes/api/wx/metars'
+import { Route as ApiWxWindsRouteImport } from './routes/api/wx/winds'
 import { Route as ApiChartsTileZXYRouteImport } from './routes/api/charts/tile/$z/$x/$y'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAirspaceTfrsRoute = ApiAirspaceTfrsRouteImport.update({
+  id: '/api/airspace/tfrs',
+  path: '/api/airspace/tfrs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiChartsStatusRoute = ApiChartsStatusRouteImport.update({
@@ -29,6 +37,16 @@ const ApiWxAdvisoriesRoute = ApiWxAdvisoriesRouteImport.update({
   path: '/api/wx/advisories',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWxMetarsRoute = ApiWxMetarsRouteImport.update({
+  id: '/api/wx/metars',
+  path: '/api/wx/metars',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWxWindsRoute = ApiWxWindsRouteImport.update({
+  id: '/api/wx/winds',
+  path: '/api/wx/winds',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiChartsTileZXYRoute = ApiChartsTileZXYRouteImport.update({
   id: '/api/charts/tile/$z/$x/$y',
   path: '/api/charts/tile/$z/$x/$y',
@@ -37,48 +55,69 @@ const ApiChartsTileZXYRoute = ApiChartsTileZXYRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/airspace/tfrs': typeof ApiAirspaceTfrsRoute
   '/api/charts/status': typeof ApiChartsStatusRoute
   '/api/wx/advisories': typeof ApiWxAdvisoriesRoute
+  '/api/wx/metars': typeof ApiWxMetarsRoute
+  '/api/wx/winds': typeof ApiWxWindsRoute
   '/api/charts/tile/$z/$x/$y': typeof ApiChartsTileZXYRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/airspace/tfrs': typeof ApiAirspaceTfrsRoute
   '/api/charts/status': typeof ApiChartsStatusRoute
   '/api/wx/advisories': typeof ApiWxAdvisoriesRoute
+  '/api/wx/metars': typeof ApiWxMetarsRoute
+  '/api/wx/winds': typeof ApiWxWindsRoute
   '/api/charts/tile/$z/$x/$y': typeof ApiChartsTileZXYRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/airspace/tfrs': typeof ApiAirspaceTfrsRoute
   '/api/charts/status': typeof ApiChartsStatusRoute
   '/api/wx/advisories': typeof ApiWxAdvisoriesRoute
+  '/api/wx/metars': typeof ApiWxMetarsRoute
+  '/api/wx/winds': typeof ApiWxWindsRoute
   '/api/charts/tile/$z/$x/$y': typeof ApiChartsTileZXYRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/api/airspace/tfrs'
     | '/api/charts/status'
     | '/api/wx/advisories'
+    | '/api/wx/metars'
+    | '/api/wx/winds'
     | '/api/charts/tile/$z/$x/$y'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/api/airspace/tfrs'
     | '/api/charts/status'
     | '/api/wx/advisories'
+    | '/api/wx/metars'
+    | '/api/wx/winds'
     | '/api/charts/tile/$z/$x/$y'
   id:
     | '__root__'
     | '/'
+    | '/api/airspace/tfrs'
     | '/api/charts/status'
     | '/api/wx/advisories'
+    | '/api/wx/metars'
+    | '/api/wx/winds'
     | '/api/charts/tile/$z/$x/$y'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiAirspaceTfrsRoute: typeof ApiAirspaceTfrsRoute
   ApiChartsStatusRoute: typeof ApiChartsStatusRoute
   ApiWxAdvisoriesRoute: typeof ApiWxAdvisoriesRoute
+  ApiWxMetarsRoute: typeof ApiWxMetarsRoute
+  ApiWxWindsRoute: typeof ApiWxWindsRoute
   ApiChartsTileZXYRoute: typeof ApiChartsTileZXYRoute
 }
 
@@ -89,6 +128,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/airspace/tfrs': {
+      id: '/api/airspace/tfrs'
+      path: '/api/airspace/tfrs'
+      fullPath: '/api/airspace/tfrs'
+      preLoaderRoute: typeof ApiAirspaceTfrsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/charts/status': {
@@ -105,6 +151,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWxAdvisoriesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/wx/metars': {
+      id: '/api/wx/metars'
+      path: '/api/wx/metars'
+      fullPath: '/api/wx/metars'
+      preLoaderRoute: typeof ApiWxMetarsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/wx/winds': {
+      id: '/api/wx/winds'
+      path: '/api/wx/winds'
+      fullPath: '/api/wx/winds'
+      preLoaderRoute: typeof ApiWxWindsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/charts/tile/$z/$x/$y': {
       id: '/api/charts/tile/$z/$x/$y'
       path: '/api/charts/tile/$z/$x/$y'
@@ -117,8 +177,11 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiAirspaceTfrsRoute: ApiAirspaceTfrsRoute,
   ApiChartsStatusRoute: ApiChartsStatusRoute,
   ApiWxAdvisoriesRoute: ApiWxAdvisoriesRoute,
+  ApiWxMetarsRoute: ApiWxMetarsRoute,
+  ApiWxWindsRoute: ApiWxWindsRoute,
   ApiChartsTileZXYRoute: ApiChartsTileZXYRoute,
 }
 export const routeTree = rootRouteImport

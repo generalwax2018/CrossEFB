@@ -9,7 +9,7 @@ export type DocId =
   | "rental";
 
 export type Tab = "chart" | "plan" | "wx" | "aircraft" | "docs";
-export type ChartMode = "night" | "day";
+export type ChartMode = "night" | "day" | "red" | "green" | "yellow";
 
 export type Airspace = "B" | "C" | "D" | "E";
 
@@ -62,7 +62,33 @@ export type Aircraft = {
   refLb: number;
   liftoffKt: number;
   approachKt: number;
+  /** Best-glide ratio, e.g. 9 for 9:1. */
+  glide?: number;
+  /** Maximum demonstrated crosswind, kt. */
+  maxXwind?: number;
 };
+
+export type SavedPlan = {
+  id: string;
+  name: string;
+  route: string[];
+  windFrom: number;
+  windKts: number;
+  aircraftId: string;
+  savedAt: string;
+};
+
+export type PilotRecord = {
+  name: string;
+  /** ISO date of the last flight review (14 CFR 61.56). */
+  flightReview: string;
+  /** ISO date the medical or BasicMed lapses. */
+  medicalExpires: string;
+  /** Personal minimum crosswind, kt. */
+  xwindMin: number;
+};
+
+export type WindMode = "manual" | "forecast";
 
 export type Metar = {
   icao: string;

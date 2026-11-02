@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { CHECKS, checkId, PROFILES, resolveAircraft } from "@/lib/efb/aircraft";
 import { getAirport } from "@/lib/efb/airports";
 import {
@@ -11,21 +11,42 @@ import {
   weightBalance,
   windComponents,
 } from "@/lib/efb/docs";
-import { buildLegs, fmtGal, fmtMin, fmtNm, hdgText, totals } from "@/lib/efb/nav";
+import { fmtGal, fmtMin, fmtNm, hdgText, totals } from "@/lib/efb/nav";
 import { fmtClock, isLocalNight, sunClock } from "@/lib/efb/sun";
 import { useEfb } from "@/lib/efb/store";
 import type { DocId, Metar } from "@/lib/efb/types";
 import { useWeather } from "./panels";
+import { useLegs, useLive } from "@/lib/efb/live-store";
+import { tfrsOnRoute } from "@/lib/efb/live";
+import { currency, goNoGo, logbookCsv } from "@/lib/efb/brief";
+import { favoredRunway } from "@/lib/efb/docs";
+import { download } from "./extras";
+import { Btn, CatBadge, catColor, cx, NumField, Readout, Toggle } from "./ui";
+import {
+  BookOpen,
+  CheckSquare,
+  ClipboardCheck,
+  CloudSun,
+  Gauge,
+  KeyRound,
+  Copy,
+  Download,
+  ExternalLink,
+  Printer,
+  Scale,
+  ShieldAlert,
+  type LucideIcon,
+} from "lucide-react";
 
-const DOCS: { id: DocId; label: string }[] = [
-  { id: "navlog", label: "Navlog" },
-  { id: "wb", label: "Weight" },
-  { id: "perf", label: "Performance" },
-  { id: "brief", label: "Brief" },
-  { id: "frat", label: "Risk" },
-  { id: "checks", label: "Checks" },
-  { id: "log", label: "Logbook" },
-  { id: "rental", label: "Rental" },
+const DOCS: { id: DocId; label: string; icon: LucideIcon }[] = [
+  { id: "navlog", label: "Navlog", icon: ClipboardCheck },
+  { id: "wb", label: "Weight", icon: Scale },
+  { id: "perf", label: "Performance", icon: Gauge },
+  { id: "brief", label: "Brief", icon: CloudSun },
+  { id: "frat", label: "Risk", icon: ShieldAlert },
+  { id: "checks", label: "Checklist", icon: CheckSquare },
+  { id: "log", label: "Logbook", icon: BookOpen },
+  { id: "rental", label: "Rental", icon: KeyRound },
 ];
 
 function useFlight() {
@@ -48,7 +69,7 @@ function useFlight() {
   const tempC = tempOverride ?? metar?.temp ?? 15;
   const altimInHg = altimOverride ?? (metar?.altim != null ? hpaToInHg(metar.altim) : 29.92);
   const rwyHdg = rwyOverride ?? origin?.hdg ?? 0;
-  const legs = buildLegs(route, aircraft, windFrom, windKts);
+  const legs = useLegs();
   const sum = totals(legs);
   const wb = weightBalance(aircraft, loads, fuelGal);
   const burned = Number.isFinite(sum.gal) ? sum.gal : 0;
@@ -112,24 +133,24 @@ function Sheet({
   const aircraft = resolveAircraft(useEfb((s) => s.aircraft));
   const route = useEfb((s) => s.route);
   return (
-    <article id="flight-file" className="mx-auto flex max-w-3xl flex-col gap-4">
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-mono text-xs tracking-widest text-amber">CROSS EFB · PLANNING AID</p>
-          <h2 className="mt-1 text-xl font-semibold">{title}</h2>
-          <p className="mt-1 font-mono text-xs text-muted">
-            {aircraft.tail} · {aircraft.name} · {route.join(" ") || "No route"}
+    <article
+      id="flight-file"
+      className="mx-auto flex w-full max-w-3xl flex-col gap-4 rounded-[1.1rem] border border-line bg-surface p-4 sm:p-6"
+    >
+      <header className="flex items-start justify-between gap-3 border-b border-line pb-4">
+        <div className="min-w-0">
+          <p className="eyebrow text-amber">CrossEFB · Planning aid</p>
+          <h2 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h2>
+          <p className="mt-1 truncate font-mono text-xs text-muted">
+            <span className="text-fg">{aircraft.tail}</span> · {aircraft.name} · {route.join(" › ") || "No route"}
           </p>
         </div>
-        <button
-          className="no-print h-11 shrink-0 rounded-md bg-amber px-4 text-sm font-medium text-ink"
-          onClick={() => window.print()}
-        >
-          Print
-        </button>
+        <Btn variant="secondary" className="no-print shrink-0" icon={<Printer className="size-4" />} onClick={() => window.print()}>
+          <span className="hidden sm:inline">Print</span>
+        </Btn>
       </header>
       {children}
-      <p className="text-xs leading-relaxed text-muted">
+      <p className="border-t border-line pt-3 text-xs leading-relaxed text-faint">
         Sample aircraft figures, not an AFM. Estimates only. The pilot in command verifies weight,
         performance, weather, and NOTAMs before flight.
       </p>
@@ -148,21 +169,8 @@ function Num({
   onChange: (n: number) => void;
   step?: number;
 }) {
-  return (
-    <label className="text-xs text-muted">
-      {label}
-      <input
-        inputMode="decimal"
-        step={step}
-        className="mt-1 h-11 w-full rounded-md border border-line bg-surface px-2 font-mono text-sm text-fg"
-        value={Number.isFinite(value) ? value : 0}
-        onChange={(e) => {
-          const n = e.target.valueAsNumber;
-          if (Number.isFinite(n)) onChange(n);
-        }}
-      />
-    </label>
-  );
+  const decimals = step < 0.1 ? 2 : step < 1 ? 1 : undefined;
+  return <NumField label={label} value={Number.isFinite(value) ? value : 0} decimals={decimals} onChange={onChange} />;
 }
 
 function NavlogSheet() {
@@ -180,17 +188,24 @@ function NavlogSheet() {
 
   return (
     <Sheet title="Navigation log">
-      <div className="grid grid-cols-2 gap-2 font-mono text-sm sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat k="Distance" v={`${fmtNm(f.sum.nm)} NM`} />
         <Stat k="ETE" v={fmtMin(f.sum.min)} />
         <Stat k="Fuel burn" v={`${fmtGal(f.sum.gal)} gal`} />
-        <Stat k="Wind" v={`${hdgText(f.windFrom)} / ${f.windKts}`} />
+        <Stat
+          k={f.legs.some((l) => l.windSource === "forecast") ? "Wind (forecast)" : "Wind"}
+          v={
+            f.legs.some((l) => l.windSource === "forecast")
+              ? `${hdgText(f.legs[0].windFrom)} / ${f.legs[0].windKts}`
+              : `${hdgText(f.windFrom)} / ${f.windKts}`
+          }
+        />
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[32rem] text-left text-xs">
+        <table className="w-full min-w-[40rem] text-left text-xs">
           <thead className="text-muted">
             <tr>
-              {["Leg", "MC", "NM", "GS", "ETE", "Fuel", "Actual"].map((h) => (
+              {["Leg", "Wind", "MC", "MH", "NM", "GS", "ETE", "Fuel", "Actual"].map((h) => (
                 <th key={h} className="py-2 font-medium">
                   {h}
                 </th>
@@ -203,7 +218,12 @@ function NavlogSheet() {
                 <td className="py-2">
                   {l.from}–{l.to}
                 </td>
+                <td className={l.windSource === "forecast" ? "text-cyan" : "text-muted"}>
+                  {hdgText(l.windFrom)}/{l.windKts}
+                  {l.oat != null ? ` ${l.oat > 0 ? "+" : ""}${l.oat}°` : ""}
+                </td>
                 <td>{hdgText(l.mc)}</td>
+                <td>{hdgText(l.mh)}</td>
                 <td>{fmtNm(l.nm)}</td>
                 <td>{l.gs < 1 ? "—" : Math.round(l.gs)}</td>
                 <td>{fmtMin(l.min)}</td>
@@ -213,7 +233,7 @@ function NavlogSheet() {
             ))}
             {f.legs.length === 0 && (
               <tr>
-                <td colSpan={7} className="py-3 text-muted">
+                <td colSpan={9} className="py-3 text-muted">
                   Add at least two airports on the plan.
                 </td>
               </tr>
@@ -226,20 +246,16 @@ function NavlogSheet() {
         {Math.round(f.fuelMinLeft)} min). {f.night ? "Night" : "Day"} VFR reserve used here is {reserveMin}{" "}
         min ({fmtGal(reserveGal)} gal).
       </p>
-      <pre className="overflow-x-auto rounded-md border border-line bg-surface p-3 font-mono text-xs leading-relaxed">
+      <pre className="overflow-x-auto rounded-[0.75rem] border border-line bg-bg p-3 font-mono text-xs leading-relaxed">
         {plan}
       </pre>
+      <FilingHelper plan={plan} />
     </Sheet>
   );
 }
 
-function Stat({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="rounded-md border border-line bg-surface px-3 py-2">
-      <div className="text-xs text-muted">{k}</div>
-      <div className="font-mono">{v}</div>
-    </div>
-  );
+function Stat({ k, v, tone }: { k: string; v: string; tone?: "warn" | "bad" | "good" }) {
+  return <Readout label={k} value={v} tone={tone} />;
 }
 
 function Envelope({ arm, weight }: { arm: number; weight: number }) {
@@ -258,8 +274,8 @@ function Envelope({ arm, weight }: { arm: number; weight: number }) {
   const aft = [...aircraft.aft].sort((a, b) => b.lb - a.lb);
   const poly = [...fwd, ...aft].map((p) => `${x(p.arm)},${y(p.lb)}`).join(" ");
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-48 w-full rounded-md" role="img" aria-label="Center of gravity envelope">
-      <rect width={W} height={H} fill="var(--color-surface)" />
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-56 w-full rounded-[0.75rem] border border-line" role="img" aria-label="Center of gravity envelope">
+      <rect width={W} height={H} fill="var(--color-bg)" />
       <polygon points={poly} fill="var(--color-amber)" fillOpacity="0.28" stroke="var(--color-amber)" strokeWidth="1.5" />
       <circle cx={x(arm)} cy={y(weight)} r="5" fill="var(--color-fg)" stroke="var(--color-amber)" />
       <text x="12" y="16" fill="var(--color-muted)" fontSize="11">
@@ -278,7 +294,12 @@ function WbSheet() {
   const setFuelGal = useEfb((s) => s.setFuelGal);
   return (
     <Sheet title="Weight and balance">
-      <p className={`text-sm ${f.wb.inside ? "text-fg" : "text-amber"}`}>
+      <p
+        className={cx(
+          "rounded-[0.75rem] border px-3 py-2 text-sm",
+          f.wb.inside ? "border-good/40 bg-good/10 text-good" : "border-bad/40 bg-bad/10 text-bad",
+        )}
+      >
         {Math.round(f.wb.weight)} lb · CG {f.wb.arm.toFixed(1)} in · {f.wb.reason}. Limits at this weight{" "}
         {f.wb.fwdArm.toFixed(1)} to {f.wb.aftArm.toFixed(1)} in. Max {f.wb.mgw} lb.
       </p>
@@ -336,14 +357,14 @@ function PerfSheet() {
         <Num label="Altimeter inHg" value={Number(f.altimInHg.toFixed(2))} step={0.01} onChange={setAltim} />
         <Num label="Runway heading" value={f.rwyHdg} onChange={setRwy} />
       </div>
-      <div className="grid grid-cols-2 gap-2 font-mono text-sm sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat k="Density alt" v={`${Math.round(f.perf.da).toLocaleString()} ft`} />
         <Stat k="Headwind" v={`${wind.head.toFixed(0)} kt`} />
         <Stat k="Crosswind" v={`${wind.cross.toFixed(0)} kt`} />
         <Stat k="Runway" v={f.perf.runway ? `${f.perf.runway.toLocaleString()} ft` : "—"} />
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
-        <div className={`rounded-md border p-3 ${f.perf.toMargin > 0 && f.perf.toMargin < 1.5 ? "border-amber" : "border-line"}`}>
+        <div className={`rounded-[0.75rem] border bg-bg p-3 ${f.perf.toMargin > 0 && f.perf.toMargin < 1.5 ? "border-warn" : "border-line"}`}>
           <h3 className="text-sm font-semibold">Takeoff · {Math.round(f.wb.weight)} lb</h3>
           <p className="mt-2 font-mono text-sm">Ground roll {short(f.perf.toRoll)}</p>
           <p className="font-mono text-sm">Over 50 ft {short(f.perf.to50)}</p>
@@ -351,7 +372,7 @@ function PerfSheet() {
             {f.perf.toMargin ? `${f.perf.toMargin.toFixed(1)}× runway versus the 50-ft distance` : "No runway length"}
           </p>
         </div>
-        <div className={`rounded-md border p-3 ${f.perf.ldgMargin > 0 && f.perf.ldgMargin < 1.5 ? "border-amber" : "border-line"}`}>
+        <div className={`rounded-[0.75rem] border bg-bg p-3 ${f.perf.ldgMargin > 0 && f.perf.ldgMargin < 1.5 ? "border-warn" : "border-line"}`}>
           <h3 className="text-sm font-semibold">Landing · {Math.round(f.ldgWeight)} lb</h3>
           <p className="mt-2 font-mono text-sm">Ground roll {short(f.perf.ldgRoll)}</p>
           <p className="font-mono text-sm">Over 50 ft {short(f.perf.ldg50)}</p>
@@ -369,6 +390,7 @@ function BriefSheet() {
   const f = useFlight();
   return (
     <Sheet title="Briefing pack">
+      <GoNoGoCard />
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted">
           {f.wx.loading
@@ -377,28 +399,31 @@ function BriefSheet() {
               ? `Live ${f.wx.data.fetchedAt?.slice(11, 16) ?? ""}Z`
               : "Weather unavailable"}
         </p>
-        <button className="no-print h-11 rounded-md border border-line px-3 text-sm" onClick={f.wx.reload}>
+        <Btn size="sm" className="no-print" onClick={f.wx.reload}>
           Refresh
-        </button>
+        </Btn>
       </div>
       {f.wx.failed && <p className="text-sm text-amber">Live weather is unavailable. Do not treat this sheet as a briefing.</p>}
       {f.route.map((id) => {
         const metar = f.wx.data?.metars.find((m) => m.icao === id);
         const taf = f.wx.data?.tafs.find((t) => t.icao === id);
         return (
-          <section key={id} className="rounded-md border border-line bg-surface p-3">
-            <div className="flex items-baseline gap-2">
-              <span className="font-mono text-sm text-amber">{id}</span>
-              <span className="text-xs text-muted">{getAirport(id)?.name}</span>
-              {metar && <span className="ml-auto font-mono text-xs">{metar.fltCat}</span>}
+          <section key={id} className="overflow-hidden rounded-[0.75rem] border border-line bg-bg">
+            <div className="h-1" style={{ background: catColor(metar?.fltCat) }} />
+            <div className="p-3">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-sm font-semibold text-amber">{id}</span>
+              <span className="min-w-0 flex-1 truncate text-xs text-muted">{getAirport(id)?.name}</span>
+              {metar && <CatBadge cat={metar.fltCat} />}
             </div>
             <WxLine metar={metar} />
             {taf && <p className="mt-2 font-mono text-xs leading-relaxed text-muted">{taf.raw}</p>}
+            </div>
           </section>
         );
       })}
-      <section className="rounded-md border border-line p-3 text-sm">
-        <h3 className="font-semibold">NOTAMs and TFRs</h3>
+      <section className="rounded-[0.75rem] border border-warn/40 bg-warn/10 p-3 text-sm">
+        <h3 className="font-semibold text-warn">NOTAMs and TFRs</h3>
         <p className="mt-1 text-muted">
           This build does not pull NOTAMs. Read the official briefing for {f.route.join(", ") || "the route"} before
           you go.
@@ -452,28 +477,43 @@ function FratSheet() {
     scored.band === "high" ? "High risk" : scored.band === "medium" ? "Medium risk" : "Low risk";
   return (
     <Sheet title="Flight risk">
-      <div className={`rounded-md border px-3 py-3 ${scored.band === "low" ? "border-line" : "border-amber"}`}>
-        <p className="font-mono text-sm">
-          {scored.score} points · {band}
-        </p>
+      <div
+        className={cx(
+          "flex items-center gap-4 rounded-[0.75rem] border px-4 py-3",
+          scored.band === "low" && "border-good/40 bg-good/10",
+          scored.band === "medium" && "border-warn/40 bg-warn/10",
+          scored.band === "high" && "border-bad/40 bg-bad/10",
+        )}
+      >
+        <div
+          className={cx(
+            "tnum font-mono text-4xl font-semibold",
+            scored.band === "low" ? "text-good" : scored.band === "medium" ? "text-warn" : "text-bad",
+          )}
+        >
+          {scored.score}
+        </div>
+        <div>
+        <p className="text-sm font-semibold">{band}</p>
         <p className="mt-1 text-xs text-muted">
           Auto items come from the plan, weather, and logbook. You only answer what the airplane cannot know.
           A low score is not a clearance to go.
         </p>
+        </div>
       </div>
       <ul className="flex flex-col gap-2">
         {scored.items.map((item) => (
-          <li key={item.id} className="flex items-start gap-3 rounded-md border border-line bg-surface px-3 py-2">
+          <li key={item.id} className="flex items-start gap-3 rounded-[0.75rem] border border-line bg-bg px-3 py-2.5">
             {item.source === "you" ? (
-              <button
-                aria-pressed={item.on}
-                className={`mt-0.5 h-6 w-11 shrink-0 rounded-full ${item.on ? "bg-amber" : "bg-raised"}`}
-                onClick={() => setManual({ [item.id]: !item.on } as Partial<typeof manual>)}
-              >
-                <span className="sr-only">{item.label}</span>
-              </button>
+              <Toggle
+                on={item.on}
+                label={item.label}
+                onChange={(on) => setManual({ [item.id]: on } as Partial<typeof manual>)}
+              />
             ) : (
-              <span className={`mt-1 size-2 shrink-0 rounded-full ${item.on ? "bg-amber" : "bg-line"}`} />
+              <span className="flex h-7 w-12 shrink-0 items-center justify-center">
+                <span className={`size-2.5 rounded-full ${item.on ? "bg-warn" : "bg-line-strong"}`} />
+              </span>
             )}
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
@@ -490,7 +530,7 @@ function FratSheet() {
       <label className="text-xs text-muted">
         Mitigation {scored.band !== "low" ? "(needed before you would treat this as briefed)" : "(optional)"}
         <textarea
-          className="mt-1 min-h-24 w-full rounded-md border border-line bg-surface p-3 text-sm text-fg"
+          className="field mt-1 min-h-24 py-2.5"
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="What changes if the score is not low"
@@ -515,16 +555,16 @@ function CheckSheet() {
         <p className="font-mono text-sm">
           {done}/{total}
         </p>
-        <button className="no-print h-11 rounded-md border border-line px-3 text-sm" onClick={reset}>
+        <Btn size="sm" className="no-print" onClick={reset}>
           Reset
-        </button>
+        </Btn>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-raised">
-        <div className="h-full bg-amber" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+      <div className="h-2 overflow-hidden rounded-full bg-raised">
+        <div className="h-full rounded-full bg-good transition-[width]" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
       </div>
       {CHECKS.map((phase) => (
         <section key={phase.phase}>
-          <h3 className="text-sm font-semibold">{phase.phase}</h3>
+          <h3 className="eyebrow">{phase.phase}</h3>
           <ul className="mt-2 flex flex-col gap-1">
             {phase.items.map((text, i) => {
               const id = checkId(phase.phase, i);
@@ -533,10 +573,20 @@ function CheckSheet() {
                 <li key={id}>
                   <button
                     aria-pressed={on}
-                    className="flex min-h-11 w-full items-center gap-3 rounded-md border border-line bg-surface px-3 text-left text-sm"
+                    className={cx(
+                      "flex min-h-12 w-full items-center gap-3 rounded-[0.75rem] border px-3 text-left text-sm transition-colors",
+                      on ? "border-good/30 bg-good/5" : "border-line bg-bg hover:border-line-strong",
+                    )}
                     onClick={() => toggle(id)}
                   >
-                    <span className={`size-4 shrink-0 rounded-sm border ${on ? "border-amber bg-amber" : "border-line"}`} />
+                    <span
+                      className={cx(
+                        "flex size-5 shrink-0 items-center justify-center rounded-md border-2 text-[0.7rem] font-bold",
+                        on ? "border-good bg-good text-ink" : "border-line-strong",
+                      )}
+                    >
+                      {on ? "✓" : ""}
+                    </span>
                     <span className={on ? "text-muted line-through" : ""}>{text}</span>
                   </button>
                 </li>
@@ -558,23 +608,24 @@ function LogSheet() {
   const night90 = hoursIn(logbook, 90, (e) => e.nightLdg);
   return (
     <Sheet title="Logbook">
+      <CurrencyCard />
       <div className="flex items-center justify-between gap-3">
         <p className="font-mono text-sm">
           {total.toFixed(1)} hr logged here · {night90} night landings in 90 days
         </p>
-        <button className="no-print h-11 rounded-md bg-amber px-3 text-sm font-medium text-ink" onClick={draft}>
+        <Btn variant="primary" className="no-print shrink-0" onClick={draft}>
           Draft this flight
-        </button>
+        </Btn>
       </div>
       <ul className="flex flex-col gap-3">
         {logbook.map((e) => (
-          <li key={e.id} className="rounded-md border border-line bg-surface p-3">
+          <li key={e.id} className="rounded-[0.75rem] border border-line bg-bg p-3">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <label className="text-xs text-muted">
                 Date
                 <input
                   type="date"
-                  className="mt-1 h-11 w-full rounded-md border border-line bg-bg px-2 text-sm text-fg"
+                  className="field mt-1"
                   value={e.date}
                   onChange={(ev) => update(e.id, { date: ev.target.value })}
                 />
@@ -582,7 +633,7 @@ function LogSheet() {
               <label className="text-xs text-muted">
                 From
                 <input
-                  className="mt-1 h-11 w-full rounded-md border border-line bg-bg px-2 font-mono text-sm text-fg"
+                  className="field mt-1 font-mono"
                   value={e.from}
                   onChange={(ev) => update(e.id, { from: ev.target.value.toUpperCase() })}
                 />
@@ -590,7 +641,7 @@ function LogSheet() {
               <label className="text-xs text-muted">
                 To
                 <input
-                  className="mt-1 h-11 w-full rounded-md border border-line bg-bg px-2 font-mono text-sm text-fg"
+                  className="field mt-1 font-mono"
                   value={e.to}
                   onChange={(ev) => update(e.id, { to: ev.target.value.toUpperCase() })}
                 />
@@ -601,9 +652,9 @@ function LogSheet() {
               <p className="font-mono text-xs text-muted">
                 Night {e.night} · Appr {e.approaches} · Ldg {e.dayLdg}/{e.nightLdg} · {e.remarks}
               </p>
-              <button className="no-print h-11 px-2 text-xs text-muted" onClick={() => remove(e.id)}>
+              <Btn variant="danger" size="sm" className="no-print" onClick={() => remove(e.id)}>
                 Delete
-              </button>
+              </Btn>
             </div>
           </li>
         ))}
@@ -627,7 +678,7 @@ function RentalSheet() {
         <label className="col-span-2 text-xs text-muted">
           PIC
           <input
-            className="mt-1 h-11 w-full rounded-md border border-line bg-surface px-2 text-sm text-fg"
+            className="field mt-1"
             value={rental.pic}
             onChange={(e) => setRental({ pic: e.target.value })}
           />
@@ -643,7 +694,7 @@ function RentalSheet() {
       <label className="text-xs text-muted">
         Squawks
         <textarea
-          className="mt-1 min-h-24 w-full rounded-md border border-line bg-surface p-3 text-sm text-fg"
+          className="field mt-1 min-h-24 py-2.5"
           value={rental.squawk}
           onChange={(e) => setRental({ squawk: e.target.value })}
           placeholder="Write discrepancies before the next renter"
@@ -678,51 +729,74 @@ export function DocumentDesk() {
   const night = origin ? isLocalNight(origin.lat, origin.lon, departHour) : false;
   const apply = useEfb((s) => s.applyProfile);
   const profileId = useEfb((s) => s.aircraft.profileId);
+  const myAircraft = useEfb((s) => s.myAircraft);
   const Active = SHEETS[doc] ?? NavlogSheet;
 
   return (
-    <div className="flex flex-col gap-4 pb-8">
-      <div className="no-print flex flex-col gap-3">
-        <div className="flex items-end justify-between gap-3">
+    <div className="flex flex-col gap-4 px-3 pt-4 pb-24 sm:px-6 sm:pb-10">
+      <div className="no-print mx-auto flex w-full max-w-3xl flex-col gap-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold tracking-wide">FLIGHT FILE</h2>
+            <h1 className="text-xl font-semibold tracking-tight">Flight file</h1>
             <p className="text-xs text-muted">One plan fills every sheet.</p>
             {sun && (
-              <p className={`font-mono text-xs ${night ? "text-amber" : "text-muted"}`}>
+              <p className={`tnum mt-1 font-mono text-xs ${night ? "text-warn" : "text-faint"}`}>
                 Sun {fmtClock(sun.riseMin)}–{fmtClock(sun.setMin)} · twilight {fmtClock(sun.civilStartMin)}–{fmtClock(sun.civilEndMin)}
-                {night ? " · night" : " · day"}
+                {night ? " · night departure" : " · day departure"}
               </p>
             )}
           </div>
-          <label className="text-xs text-muted">
-            Depart hour
-            <input
-              inputMode="numeric"
-              className="mt-1 h-11 w-20 rounded-md border border-line bg-surface px-2 font-mono text-sm text-fg"
-              value={departHour}
-              onChange={(e) => {
-                const n = e.target.valueAsNumber;
-                if (Number.isFinite(n)) setDepartHour(n);
-              }}
-            />
-          </label>
+          <NumField
+            label="Depart hour (local)"
+            className="w-36"
+            value={departHour}
+            pad={2}
+            min={0}
+            max={23}
+            suffix=":00"
+            onChange={setDepartHour}
+          />
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {DOCS.map((d) => (
+        <nav className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0" aria-label="Flight file sheets">
+          {DOCS.map((d) => {
+            const on = doc === d.id;
+            return (
+              <button
+                key={d.id}
+                aria-current={on ? "page" : undefined}
+                className={cx(
+                  "flex h-10 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors",
+                  on ? "bg-amber text-ink" : "border border-line bg-surface text-muted hover:text-fg",
+                )}
+                onClick={() => setDoc(d.id)}
+              >
+                <d.icon className="size-4" />
+                {d.label}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="flex items-center gap-2 overflow-x-auto">
+          <span className="eyebrow shrink-0">Aircraft</span>
+          {myAircraft.map((p) => (
             <button
-              key={d.id}
-              className={`h-11 shrink-0 rounded-md px-3 text-sm ${doc === d.id ? "bg-amber text-ink" : "border border-line bg-surface text-fg"}`}
-              onClick={() => setDoc(d.id)}
+              key={p.profileId}
+              className={cx(
+                "h-8 shrink-0 rounded-full px-3 font-mono text-xs font-medium",
+                profileId === p.profileId ? "bg-amber-soft text-amber ring-1 ring-amber/50" : "text-muted ring-1 ring-line hover:text-fg",
+              )}
+              onClick={() => apply(p.profileId)}
             >
-              {d.label}
+              {p.tail}
             </button>
           ))}
-        </div>
-        <div className="flex gap-2 overflow-x-auto">
           {PROFILES.map((p) => (
             <button
               key={p.profileId}
-              className={`h-10 shrink-0 rounded-md px-3 text-xs ${profileId === p.profileId ? "border border-amber text-amber" : "border border-line text-muted"}`}
+              className={cx(
+                "h-8 shrink-0 rounded-full px-3 text-xs font-medium",
+                profileId === p.profileId ? "bg-amber-soft text-amber ring-1 ring-amber/50" : "text-muted ring-1 ring-line hover:text-fg",
+              )}
               onClick={() => apply(p.profileId)}
             >
               {p.name}
@@ -732,5 +806,154 @@ export function DocumentDesk() {
       </div>
       <Active />
     </div>
+  );
+}
+
+function FilingHelper({ plan }: { plan: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="no-print flex flex-wrap items-center gap-2">
+      <Btn
+        size="sm"
+        icon={<Copy className="size-3.5" />}
+        onClick={() => {
+          void navigator.clipboard?.writeText(plan).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          });
+        }}
+      >
+        {copied ? "Copied" : "Copy flight plan"}
+      </Btn>
+      <a
+        href="https://www.1800wxbrief.com/"
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex h-9 items-center gap-1.5 rounded-[0.625rem] border border-line bg-surface px-3 text-xs font-medium hover:bg-hover"
+      >
+        File and brief at 1800wxbrief <ExternalLink className="size-3.5" />
+      </a>
+      <span className="text-[0.6875rem] text-faint">CrossEFB does not file. Paste the plan and get an official briefing.</span>
+    </div>
+  );
+}
+
+function GoNoGoCard() {
+  const f = useFlight();
+  const tfrs = useLive((s) => s.tfrs.tfrs);
+  const field = useLive((s) => s.metars.stations);
+  // Fall back to the map's METAR layer when the briefing fetch has nothing.
+  const mapCat = (id: string | undefined) => (id ? (field.find((m) => m.id === id)?.cat ?? null) : null);
+  const logbook = useEfb((s) => s.logbook);
+  const pilot = useEfb((s) => s.pilot);
+  const pts = f.route.map((id) => getAirport(id)).filter((a): a is NonNullable<typeof a> => Boolean(a));
+  const hits = tfrsOnRoute(tfrs, pts);
+  const fav = f.origin && f.metar ? favoredRunway(f.origin.rwy, f.metar.wdir, f.metar.wspd) : null;
+  const xw = fav && !fav.calm ? Math.abs(fav.cross) : f.metar ? 0 : f.perf.cross;
+  const reserveGal = (f.aircraft.burnGph * (f.night ? 45 : 30)) / 60;
+  const pax = Object.entries(f.loads).some(([id, lb]) => id !== "pilot" && id !== "bags" && lb > 0);
+  const result = goNoGo({
+    originId: f.origin?.icao ?? null,
+    destId: f.dest?.icao ?? null,
+    originCat: f.metar?.fltCat ?? mapCat(f.origin?.icao),
+    destCat: f.destMetar?.fltCat ?? mapCat(f.dest?.icao),
+    surfaceWind: f.metar?.wspd ?? 0,
+    crosswind: xw,
+    maxXwind: f.aircraft.maxXwind ?? 15,
+    personalXwind: pilot.xwindMin,
+    fuelLeftGal: f.fuelLeftGal,
+    reserveGal,
+    wbOk: f.wb.inside,
+    wbReason: f.wb.reason,
+    toMargin: f.perf.toMargin,
+    densityAlt: f.perf.da,
+    night: f.night,
+    tfrIds: hits.map((t) => t.id),
+    currency: currency(logbook, pilot),
+    passengers: pax,
+  });
+  const tone =
+    result.verdict === "nogo" ? "border-bad/50 bg-bad/10 text-bad" : result.verdict === "caution" ? "border-warn/50 bg-warn/10 text-warn" : "border-good/50 bg-good/10 text-good";
+  const label = result.verdict === "nogo" ? "NO-GO" : result.verdict === "caution" ? "CAUTION" : "GO";
+  return (
+    <section className={cx("rounded-[0.875rem] border p-4", tone)}>
+      <div className="flex items-center gap-3">
+        <span className="rounded-md bg-current/15 px-2 py-1 font-mono text-sm font-bold">{label}</span>
+        <p className="text-sm font-semibold text-fg">{result.headline}</p>
+      </div>
+      <ul className="mt-3 flex flex-col gap-1.5 text-sm text-fg">
+        {result.items.map((it, i) => (
+          <li key={i} className="flex gap-2">
+            <span
+              className={cx(
+                "mt-1.5 size-2 shrink-0 rounded-full",
+                it.level === "nogo" ? "bg-bad" : it.level === "caution" ? "bg-warn" : "bg-good",
+              )}
+            />
+            {it.text}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-[0.6875rem] text-muted">
+        Computed from this plan, live METARs, TFRs, and your logbook. It is a checklist, not a weather briefing.
+      </p>
+    </section>
+  );
+}
+
+function CurrencyCard() {
+  const logbook = useEfb((s) => s.logbook);
+  const pilot = useEfb((s) => s.pilot);
+  const setPilot = useEfb((s) => s.setPilot);
+  const items = currency(logbook, pilot);
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {items.map((c) => (
+          <div
+            key={c.id}
+            className={cx(
+              "flex items-center gap-3 rounded-[0.75rem] border px-3 py-2.5",
+              c.ok === true && "border-good/40 bg-good/5",
+              c.ok === false && "border-bad/40 bg-bad/10",
+              c.ok === null && "border-line bg-bg",
+            )}
+          >
+            <span
+              className={cx(
+                "flex size-6 shrink-0 items-center justify-center rounded-full font-mono text-xs font-bold",
+                c.ok === true ? "bg-good text-ink" : c.ok === false ? "bg-bad text-ink" : "bg-raised text-muted",
+              )}
+            >
+              {c.ok === true ? "✓" : c.ok === false ? "!" : "?"}
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{c.label}</p>
+              <p className="truncate text-xs text-muted">{c.detail}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="no-print grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-muted">Last flight review</span>
+          <input type="date" className="field" value={pilot.flightReview} onChange={(e) => setPilot({ flightReview: e.target.value })} />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-muted">Medical expires</span>
+          <input type="date" className="field" value={pilot.medicalExpires} onChange={(e) => setPilot({ medicalExpires: e.target.value })} />
+        </label>
+        <NumField label="Personal xwind max" suffix="kt" value={pilot.xwindMin} min={0} max={40} onChange={(n) => setPilot({ xwindMin: n })} />
+        <div className="flex flex-col justify-end">
+          <Btn
+            size="md"
+            icon={<Download className="size-4" />}
+            onClick={() => download(`crossefb-logbook-${new Date().toISOString().slice(0, 10)}.csv`, "text/csv", logbookCsv(logbook))}
+          >
+            Export CSV
+          </Btn>
+        </div>
+      </div>
+    </section>
   );
 }

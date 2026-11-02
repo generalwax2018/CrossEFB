@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { DEFAULT_LOADS, profileById, resolveAircraft } from "./aircraft";
+import { DEFAULT_LOADS, isCustomId, profileById, resolveAircraft } from "./aircraft";
 import { getAirport } from "./airports";
 import { buildLegs, totals } from "./nav";
 import { isLocalNight } from "./sun";
-import type { Aircraft, ChartMode, DocId, FratManual, LogEntry, Rental, Tab } from "./types";
+import type { Aircraft, ChartMode, DocId, FratManual, LogEntry, PilotRecord, Rental, SavedPlan, Tab, WindMode } from "./types";
 
 const emptyManual: FratManual = {
   sleep: false,
@@ -74,7 +74,28 @@ const defaultRental: Rental = {
   squawk: "",
 };
 
+const defaultPilot: PilotRecord = { name: "", flightReview: "", medicalExpires: "", xwindMin: 12 };
+
 type EfbState = {
+  windMode: WindMode;
+  showTfrs: boolean;
+  showMetars: boolean;
+  showGlide: boolean;
+  plans: SavedPlan[];
+  myAircraft: Aircraft[];
+  pilot: PilotRecord;
+  nearestOpen: boolean;
+  setWindMode: (mode: WindMode) => void;
+  setLayer: (layer: "showTfrs" | "showMetars" | "showGlide", on: boolean) => void;
+  savePlan: (name: string) => void;
+  loadPlan: (id: string) => void;
+  deletePlan: (id: string) => void;
+  saveMyAircraft: () => void;
+  deleteMyAircraft: (profileId: string) => void;
+  setPilot: (patch: Partial<PilotRecord>) => void;
+  setNearestOpen: (open: boolean) => void;
+  /** Replace saved data from a backup file. Returns false if it was not a CrossEFB backup. */
+  restore: (data: unknown) => boolean;
   tab: Tab;
   doc: DocId;
   route: string[];
@@ -148,6 +169,82 @@ function cleanRoute(ids: string[]): string[] {
 export const useEfb = create<EfbState>()(
   persist(
     (set) => ({
+      windMode: "manual",
+      showTfrs: true,
+      showMetars: true,
+      showGlide: true,
+      plans: [],
+      myAircraft: [],
+      pilot: defaultPilot,
+      nearestOpen: false,
+      setWindMode: (windMode) => set({ windMode }),
+      setLayer: (layer, on) => set({ [layer]: on } as Partial<EfbState>),
+      savePlan: (name) =>
+        set((s) => {
+          const label = name.trim() || `${s.route[0] ?? ""} → ${s.route[s.route.length - 1] ?? ""}`;
+          const plan: SavedPlan = {
+            id: `plan-${Date.now()}`,
+            name: label,
+            route: s.route.slice(),
+            windFrom: s.windFrom,
+            windKts: s.windKts,
+            aircraftId: s.aircraft.profileId,
+            savedAt: new Date().toISOString(),
+          };
+          const rest = s.plans.filter((p) => p.name !== label);
+          return { plans: [plan, ...rest].slice(0, 50) };
+        }),
+      loadPlan: (id) =>
+        set((s) => {
+          const plan = s.plans.find((p) => p.id === id);
+          if (!plan) return {};
+          const own = s.myAircraft.find((a) => a.profileId === plan.aircraftId);
+          const aircraft = own
+            ? own
+            : plan.aircraftId && plan.aircraftId !== s.aircraft.profileId && !isCustomId(plan.aircraftId)
+              ? { ...profileById(plan.aircraftId), tail: s.aircraft.tail }
+              : s.aircraft;
+          return {
+            route: cleanRoute(plan.route),
+            windFrom: plan.windFrom,
+            windKts: plan.windKts,
+            aircraft,
+            selected: plan.route[0] ?? null,
+            flying: false,
+            progressNm: 0,
+          };
+        }),
+      deletePlan: (id) => set((s) => ({ plans: s.plans.filter((p) => p.id !== id) })),
+      saveMyAircraft: () =>
+        set((s) => {
+          const current = resolveAircraft(s.aircraft);
+          const id = isCustomId(current.profileId) ? current.profileId : `my-${Date.now()}`;
+          const saved: Aircraft = { ...current, profileId: id };
+          const rest = s.myAircraft.filter((a) => a.profileId !== id);
+          return { aircraft: saved, myAircraft: [saved, ...rest].slice(0, 30) };
+        }),
+      deleteMyAircraft: (profileId) =>
+        set((s) => ({
+          myAircraft: s.myAircraft.filter((a) => a.profileId !== profileId),
+          aircraft: s.aircraft.profileId === profileId ? { ...s.aircraft, profileId: "c172s" } : s.aircraft,
+        })),
+      setPilot: (patch) => set((s) => ({ pilot: { ...s.pilot, ...patch } })),
+      setNearestOpen: (nearestOpen) => set({ nearestOpen }),
+      restore: (data) => {
+        const body = data as { app?: string; state?: Record<string, unknown> } | null;
+        if (!body || body.app !== "crossefb" || typeof body.state !== "object" || !body.state) return false;
+        const st = body.state;
+        set((s) => ({
+          ...s,
+          ...st,
+          aircraft: resolveAircraft((st.aircraft as Aircraft) ?? s.aircraft),
+          pilot: { ...defaultPilot, ...(st.pilot as Partial<PilotRecord> | undefined) },
+          tab: "chart",
+          flying: false,
+          progressNm: 0,
+        }));
+        return true;
+      },
       tab: "chart",
       doc: "navlog",
       route: ["KAPA", "KBJC", "KLMO", "KEIK"],
@@ -245,10 +342,14 @@ export const useEfb = create<EfbState>()(
         }),
       setAircraft: (patch) => set((s) => ({ aircraft: { ...resolveAircraft(s.aircraft), ...patch } })),
       applyProfile: (profileId) =>
-        set((s) => ({
-          aircraft: { ...profileById(profileId), tail: s.aircraft.tail || profileById(profileId).tail },
-          loads: { ...DEFAULT_LOADS },
-        })),
+        set((s) => {
+          const own = s.myAircraft.find((a) => a.profileId === profileId);
+          if (own) return { aircraft: resolveAircraft(own), loads: { ...DEFAULT_LOADS } };
+          return {
+            aircraft: { ...profileById(profileId), tail: s.aircraft.tail || profileById(profileId).tail },
+            loads: { ...DEFAULT_LOADS },
+          };
+        }),
       setLoad: (id, lb) => set((s) => ({ loads: { ...s.loads, [id]: clamp(lb, 0, 800) } })),
       setFuelGal: (fuelGal) => set({ fuelGal: clamp(fuelGal, 0, 200) }),
       setWind: (windFrom, windKts) =>
@@ -308,6 +409,14 @@ export const useEfb = create<EfbState>()(
       name: "crossefb",
       skipHydration: true,
       partialize: (s) => ({
+        windMode: s.windMode,
+        showTfrs: s.showTfrs,
+        showMetars: s.showMetars,
+        showGlide: s.showGlide,
+        showAdvisories: s.showAdvisories,
+        plans: s.plans,
+        myAircraft: s.myAircraft,
+        pilot: s.pilot,
         route: s.route,
         aircraft: s.aircraft,
         loads: s.loads,
@@ -332,6 +441,10 @@ export const useEfb = create<EfbState>()(
           loads: { ...DEFAULT_LOADS, ...saved.loads },
           fratManual: { ...emptyManual, ...saved.fratManual },
           rental: { ...defaultRental, ...saved.rental },
+          pilot: { ...defaultPilot, ...saved.pilot },
+          plans: Array.isArray(saved.plans) ? saved.plans : [],
+          myAircraft: Array.isArray(saved.myAircraft) ? saved.myAircraft.map((a) => resolveAircraft(a)) : [],
+          nearestOpen: false,
           checks: saved.checks ?? {},
           logbook: saved.logbook?.length ? saved.logbook : current.logbook,
           tab: "chart",

@@ -1,31 +1,86 @@
 @import "tailwindcss";
 
+/*
+ * CrossEFB design tokens.
+ * Three display modes share one set of names:
+ *   night (default) – dark glass cockpit
+ *   day             – high-contrast for direct sunlight
+ *   red             – night-vision red, keeps dark adaptation
+ * The mode is set on <html data-ui="..."> and the chart follows it.
+ */
 @theme {
-  --color-bg: #0c1210;
-  --color-surface: #151c19;
-  --color-raised: #1e2924;
-  --color-fg: #e7f0ea;
-  --color-muted: #8aa094;
-  --color-line: #2c3b33;
-  --color-amber: #e2a63b;
-  --color-ink: #1a1408;
-  --font-sans: "Barlow", "Segoe UI", sans-serif;
+  --color-bg: #0a0f0d;
+  --color-surface: #121916;
+  --color-raised: #1a231f;
+  --color-hover: #222d28;
+  --color-fg: #e8f1eb;
+  --color-muted: #8ba196;
+  --color-faint: #5c7066;
+  --color-line: #26332d;
+  --color-line-strong: #36463e;
+  --color-amber: #f0b03f;
+  --color-amber-soft: #f0b03f22;
+  --color-ink: #1a1306;
+  --color-cyan: #5cc8e0;
+  --color-good: #3fbf6a;
+  --color-warn: #f0b03f;
+  --color-bad: #ef5a4c;
+  --color-vfr: #3fbf6a;
+  --color-mvfr: #4f8ff7;
+  --color-ifr: #ef5a4c;
+  --color-lifr: #d35fd8;
+  --font-sans: "Barlow", "Segoe UI", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
-  --radius-card: 0.75rem;
+  --radius-card: 0.875rem;
+  --shadow-float: 0 10px 30px -8px rgb(0 0 0 / 0.55), 0 2px 6px -2px rgb(0 0 0 / 0.4);
+  --animate-sheet-up: sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-fade-in: fade-in 160ms ease-out;
+  --animate-pop: pop 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  @keyframes sheet-up {
+    from {
+      transform: translateY(16px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes pop {
+    from {
+      transform: scale(0.96);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
 }
 
 :root {
+  --glass: rgb(10 15 13 / 0.78);
   --chart-paper: #121a17;
-  --chart-grid: #4a6858;
+  --chart-grid: #2c4036;
   --chart-ink: #e4f0e8;
   --chart-dim: #8eaa9c;
   --chart-ring: #9bb0a4;
-  --chart-route: #e2a63b;
+  --chart-route: #f0b03f;
+  --chart-route-case: #0a0f0d;
   --chart-own: #f3f7f4;
   --chart-water: #163848;
   --chart-park: #1b3326;
-  --chart-road: #6d8578;
-  --chart-hwy: #b08948;
+  --chart-road: #4f6458;
+  --chart-hwy: #9a7a44;
   --chart-wx-ifr: #7f9cb8;
   --chart-wx-turb: #e2a63b;
   --chart-wx-ice: #7eb8b0;
@@ -34,13 +89,37 @@
   color-scheme: dark;
 }
 
-[data-chart="day"] {
+/* Day: sunlight-readable. */
+[data-ui="day"] {
+  --glass: rgb(250 248 242 / 0.88);
+  --color-bg: #f4f2ec;
+  --color-surface: #ffffff;
+  --color-raised: #eceae2;
+  --color-hover: #e2dfd4;
+  --color-fg: #141a16;
+  --color-muted: #55615a;
+  --color-faint: #86918a;
+  --color-line: #d6d2c6;
+  --color-line-strong: #bdb8a9;
+  --color-amber: #b86a0b;
+  --color-amber-soft: #b86a0b1f;
+  --color-ink: #ffffff;
+  --color-cyan: #0f7891;
+  --color-good: #1d8a45;
+  --color-warn: #b86a0b;
+  --color-bad: #c4342a;
+  --color-vfr: #1d8a45;
+  --color-mvfr: #1f5fd1;
+  --color-ifr: #c4342a;
+  --color-lifr: #a3279f;
+  --shadow-float: 0 10px 28px -10px rgb(40 32 10 / 0.35), 0 2px 6px -2px rgb(40 32 10 / 0.2);
   --chart-paper: #e6dcc4;
   --chart-grid: #cbbfa3;
   --chart-ink: #1c241c;
   --chart-dim: #5c5344;
   --chart-ring: #3d5874;
-  --chart-route: #9a4e12;
+  --chart-route: #b4500e;
+  --chart-route-case: #fff8e8;
   --chart-own: #142018;
   --chart-water: #c5d4de;
   --chart-park: #d5e0c8;
@@ -51,12 +130,68 @@
   --chart-wx-ice: #1f6f78;
   --chart-wx-wind: #8a6a12;
   --chart-wx-sig: #9c2f22;
+  color-scheme: light;
+}
+
+/* Red: night vision. Everything is a shade of red on black. */
+[data-ui="red"] {
+  --glass: rgb(8 0 0 / 0.82);
+  --color-bg: #070000;
+  --color-surface: #120302;
+  --color-raised: #1b0504;
+  --color-hover: #250806;
+  --color-fg: #ff5a45;
+  --color-muted: #b63a2c;
+  --color-faint: #7a261d;
+  --color-line: #2c0b08;
+  --color-line-strong: #43110c;
+  --color-amber: #ff3b26;
+  --color-amber-soft: #ff3b2622;
+  --color-ink: #120000;
+  --color-cyan: #ff6e5a;
+  --color-good: #e2452f;
+  --color-warn: #ff3b26;
+  --color-bad: #ff2a1a;
+  --color-vfr: #c9402c;
+  --color-mvfr: #e05038;
+  --color-ifr: #ff2a1a;
+  --color-lifr: #ff6b52;
+  --chart-paper: #0a0101;
+  --chart-grid: #2a0906;
+  --chart-ink: #ff5a45;
+  --chart-dim: #9c2f22;
+  --chart-ring: #b63a2c;
+  --chart-route: #ff3b26;
+  --chart-route-case: #000;
+  --chart-own: #ff8a78;
+  --chart-water: #1d0503;
+  --chart-park: #140302;
+  --chart-road: #3a0d09;
+  --chart-hwy: #5c150e;
+  --chart-wx-ifr: #b63a2c;
+  --chart-wx-turb: #ff3b26;
+  --chart-wx-ice: #d8503c;
+  --chart-wx-wind: #c9402c;
+  --chart-wx-sig: #ff2a1a;
+}
+
+/* Sectional raster tiles: tone them for the display mode. */
+.sectional-tiles {
+  transition: filter 200ms ease;
+}
+[data-ui="night"] .sectional-tiles,
+:root:not([data-ui]) .sectional-tiles {
+  filter: brightness(0.82) contrast(1.05) saturate(0.9);
+}
+[data-ui="red"] .sectional-tiles {
+  filter: grayscale(1) invert(1) brightness(0.55) sepia(1) saturate(6) hue-rotate(-40deg);
 }
 
 @layer base {
   html,
   body {
     height: 100%;
+    overscroll-behavior: none;
   }
 
   body {
@@ -64,6 +199,8 @@
     font-family: var(--font-sans);
     background: var(--color-bg);
     color: var(--color-fg);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
   }
 
   button:not(:disabled),
@@ -71,8 +208,13 @@
     cursor: pointer;
   }
 
+  button:disabled {
+    opacity: 0.5;
+  }
+
   input,
-  select {
+  select,
+  textarea {
     font: inherit;
     color: inherit;
   }
@@ -80,9 +222,63 @@
   button:focus-visible,
   input:focus-visible,
   select:focus-visible,
-  textarea:focus-visible {
+  textarea:focus-visible,
+  a:focus-visible {
     outline: 2px solid var(--color-amber);
     outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--color-amber);
+    color: var(--color-ink);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+}
+
+@layer components {
+  .glass {
+    background: var(--glass);
+    backdrop-filter: blur(14px) saturate(1.3);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+    border: 1px solid var(--color-line);
+    box-shadow: var(--shadow-float);
+  }
+
+  .eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+
+  .field {
+    height: 2.75rem;
+    width: 100%;
+    border-radius: 0.625rem;
+    border: 1px solid var(--color-line);
+    background: var(--color-bg);
+    padding: 0 0.75rem;
+    font-size: 0.875rem;
+    color: var(--color-fg);
+    transition:
+      border-color 120ms,
+      background 120ms;
+  }
+  .field:hover {
+    border-color: var(--color-line-strong);
+  }
+  .field:focus {
+    border-color: var(--color-amber);
+    outline: none;
+  }
+
+  .tnum {
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -106,5 +302,14 @@
 
   .no-print {
     display: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }

@@ -1,67 +1,145 @@
-import { useEffect } from "react";
-import { ActivePanel, AirportCard, ChartTools, InstrumentBar, SearchBox, SideNav, ZuluClock } from "./panels";
+import { useEffect, useState } from "react";
+import {
+  AirportCard,
+  BrandMark,
+  ChartTools,
+  DisplayModeButton,
+  Drawer,
+  GpsChip,
+  InstrumentBar,
+  MobileSheet,
+  MobileTabs,
+  Rail,
+  RouteSummaryPill,
+  SearchBox,
+  ZuluClock,
+} from "./panels";
 import { Chart } from "./chart";
 import { DocumentDesk } from "./documents";
+import { NearestSheet, TfrCard } from "./extras";
+import { LiveFeeds, useLive } from "@/lib/efb/live-store";
 import { OwnShip } from "./ownship";
 import { useEfb } from "@/lib/efb/store";
 
+function useIsDesktop() {
+  const [desktop, setDesktop] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const apply = () => setDesktop(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+  return desktop;
+}
+
 export function Shell() {
   const tab = useEfb((s) => s.tab);
+  const mode = useEfb((s) => s.chartMode);
+  const selected = useEfb((s) => s.selected);
+  const desktop = useIsDesktop();
 
   useEffect(() => {
-    void useEfb.persist.rehydrate();
+    void Promise.resolve(useEfb.persist.rehydrate()).then(() => {
+      // On a tablet or PC, open with the plan beside the chart.
+      if (window.matchMedia("(min-width: 1024px)").matches && useEfb.getState().tab === "chart") {
+        useEfb.getState().setTab("plan");
+      }
+    });
   }, []);
 
-  const showPanel = tab !== "chart";
+  // One attribute drives the UI theme and the chart palette.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.ui = mode;
+    root.dataset.chart = mode === "day" ? "day" : "night";
+    const meta = document.querySelector('meta[name="theme-color"]');
+    const bars: Record<string, string> = { day: "#f4f2ec", red: "#070000", green: "#000a03", yellow: "#0c0a00" };
+    meta?.setAttribute("content", bars[mode] ?? "#0a0f0d");
+  }, [mode]);
+
+  // Escape closes the airport card, then the panel.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      const s = useEfb.getState();
+      if (s.selected) s.select(null);
+      else if (s.tab !== "chart") s.setTab("chart");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const showDocs = tab === "docs";
+  // On phones the airport card and an open sheet would stack; the sheet wins.
+  const showCard = desktop || tab === "chart";
+  const pickedTfr = useLive((s) => s.pickedTfr);
 
   return (
-    <main className="flex h-dvh flex-col bg-bg text-fg">
+    <main className="relative flex h-dvh flex-col overflow-hidden bg-bg text-fg">
       <OwnShip />
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line px-3">
-        <div className="leading-none">
-          <div className="text-sm font-semibold tracking-widest">CROSS EFB</div>
-          <div className="mt-1 hidden text-xs text-muted sm:block">Android · PC</div>
-        </div>
+      <LiveFeeds />
+      <header className="z-30 flex h-14 shrink-0 items-center gap-2 border-b border-line bg-bg px-3 sm:gap-3">
+        <BrandMark />
         <SearchBox />
-        <div className="hidden sm:block">
-          <ZuluClock />
+        <RouteSummaryPill />
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <OfflineChip />
+          <GpsChip />
+          <div className="hidden sm:block">
+            <ZuluClock />
+          </div>
+          <div className="md:hidden">
+            <DisplayModeButton />
+          </div>
         </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-80 shrink-0 flex-col border-r border-line md:flex">
-          <SideNav />
-          <div className="min-h-0 flex-1 overflow-auto p-3">
-            <ActivePanel />
-          </div>
-        </aside>
+        {desktop && <Rail />}
+        {desktop && <Drawer />}
 
-        <section className="relative min-w-0 flex-1">
-          {tab === "docs" ? (
-            <div className="h-full overflow-auto bg-bg p-3">
+        <section className="relative min-w-0 flex-1 overflow-hidden">
+          {showDocs ? (
+            <div className="h-full overflow-auto bg-bg">
               <DocumentDesk />
             </div>
           ) : (
             <>
               <Chart />
               <ChartTools />
-              <AirportCard />
-              {showPanel && (
-                <div className="absolute inset-0 z-20 overflow-auto bg-bg p-3 md:hidden">
-                  <ActivePanel />
+              {showCard && selected && <AirportCard />}
+              {showCard && <TfrCard />}
+              <div
+                className={`pointer-events-none absolute inset-x-2 bottom-2 z-10 sm:inset-x-3 sm:bottom-3 ${
+                  showCard && (selected || pickedTfr) ? "hidden sm:block" : ""
+                }`}
+              >
+                <div className="pointer-events-auto">
+                  <InstrumentBar />
                 </div>
-              )}
-              <div className="absolute inset-x-0 bottom-0 z-10 border-t border-line bg-bg/95">
-                <InstrumentBar />
               </div>
+              {!desktop && <MobileSheet />}
             </>
           )}
         </section>
       </div>
 
-      <nav className="shrink-0 border-t border-line md:hidden">
-        <SideNav mobile />
-      </nav>
+      {!desktop && <MobileTabs />}
+      <NearestSheet />
     </main>
+  );
+}
+
+function OfflineChip() {
+  const online = useLive((s) => s.online);
+  if (online) return null;
+  return (
+    <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-warn/50 bg-warn/10 px-2.5 font-mono text-[0.6875rem] text-warn">
+      <span className="size-1.5 rounded-full bg-warn" />
+      Offline
+    </span>
   );
 }

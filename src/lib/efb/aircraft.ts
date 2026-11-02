@@ -146,16 +146,32 @@ export const PROFILES: Aircraft[] = [
   },
 ];
 
+const GLIDE: Record<string, { glide: number; maxXwind: number }> = {
+  c172s: { glide: 9, maxXwind: 15 },
+  c182: { glide: 9, maxXwind: 15 },
+  pa28: { glide: 9.5, maxXwind: 17 },
+  sr22: { glide: 9.5, maxXwind: 21 },
+};
+
 export function profileById(id: string): Aircraft {
-  return PROFILES.find((p) => p.profileId === id) ?? PROFILES[0];
+  const p = PROFILES.find((x) => x.profileId === id) ?? PROFILES[0];
+  return { ...GLIDE[p.profileId], ...p };
+}
+
+/** Own aircraft saved by the pilot carry ids that start with "my-". */
+export function isCustomId(id: string | undefined): boolean {
+  return Boolean(id && id.startsWith("my-"));
 }
 
 export function resolveAircraft(raw: Partial<Aircraft> | undefined): Aircraft {
   const base = profileById(raw?.profileId ?? "c172s");
+  const known = raw?.profileId && (PROFILES.some((p) => p.profileId === raw.profileId) || isCustomId(raw.profileId));
   return {
     ...base,
     ...raw,
-    profileId: raw?.profileId && PROFILES.some((p) => p.profileId === raw.profileId) ? raw.profileId : base.profileId,
+    glide: raw?.glide ?? base.glide ?? 9,
+    maxXwind: raw?.maxXwind ?? base.maxXwind ?? 15,
+    profileId: known ? raw!.profileId! : base.profileId,
     stations: raw?.stations?.length ? raw.stations : base.stations,
     fwd: raw?.fwd?.length ? raw.fwd : base.fwd,
     aft: raw?.aft?.length ? raw.aft : base.aft,
