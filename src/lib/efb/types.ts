@@ -6,6 +6,7 @@ export type DocId =
   | "frat"
   | "checks"
   | "log"
+  | "students"
   | "rental";
 
 export type Tab = "chart" | "plan" | "wx" | "aircraft" | "docs";
@@ -140,6 +141,16 @@ export type LogEntry = {
   pic: string;
   remarks: string;
   tail: string;
+  studentId: string;
+  student: string;
+  dual: number;
+  ground: number;
+};
+
+export type Student = {
+  id: string;
+  name: string;
+  note: string;
 };
 
 export type Rental = {

@@ -5,6 +5,7 @@ import { tfrsOnRoute } from "./live.ts";
 
 const log = (date: string, dayLdg: number, nightLdg: number) => ({
   id: date, date, from: "KAPA", to: "KAPA", total: 1, night: 0, approaches: 0, dayLdg, nightLdg, pic: "Self", remarks: "", tail: "N1",
+  studentId: "", student: "", dual: 0, ground: 0,
 });
 
 test("passenger currency", () => {

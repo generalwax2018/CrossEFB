@@ -14,7 +14,7 @@ import {
 import { fmtGal, fmtMin, fmtNm, hdgText, totals } from "@/lib/efb/nav";
 import { fmtClock, isLocalNight, sunClock } from "@/lib/efb/sun";
 import { useEfb } from "@/lib/efb/store";
-import type { DocId, Metar } from "@/lib/efb/types";
+import type { DocId, LogEntry, Metar, Student } from "@/lib/efb/types";
 import { useWeather } from "./panels";
 import { useLegs, useLive } from "@/lib/efb/live-store";
 import { tfrsOnRoute } from "@/lib/efb/live";
@@ -29,6 +29,7 @@ import {
   ClipboardCheck,
   CloudSun,
   Gauge,
+  GraduationCap,
   KeyRound,
   Copy,
   Download,
@@ -47,6 +48,7 @@ const DOCS: { id: DocId; label: string; icon: LucideIcon }[] = [
   { id: "frat", label: "Risk", icon: ShieldAlert },
   { id: "checks", label: "Checklist", icon: CheckSquare },
   { id: "log", label: "Logbook", icon: BookOpen },
+  { id: "students", label: "Students", icon: GraduationCap },
   { id: "rental", label: "Rental", icon: KeyRound },
 ];
 
@@ -126,9 +128,11 @@ function useFlight() {
 
 function Sheet({
   title,
+  wide,
   children,
 }: {
   title: string;
+  wide?: boolean;
   children: ReactNode;
 }) {
   const aircraft = resolveAircraft(useEfb((s) => s.aircraft));
@@ -136,7 +140,7 @@ function Sheet({
   return (
     <article
       id="flight-file"
-      className="mx-auto flex w-full max-w-3xl flex-col gap-4 rounded-[1.1rem] border border-line bg-surface p-4 sm:p-6"
+      className={`mx-auto flex w-full flex-col gap-4 rounded-[1.1rem] border border-line bg-surface p-4 sm:p-6 ${wide ? "log-page max-w-none" : "max-w-3xl"}`}
     >
       <header className="flex items-start justify-between gap-3 border-b border-line pb-4">
         <div className="min-w-0">
@@ -600,66 +604,304 @@ function CheckSheet() {
   );
 }
 
+function csvCell(value: string | number): string {
+  const text = String(value ?? "");
+  if (/[",\n]/.test(text)) return `"${text.replaceAll('"', '""')}"`;
+  return text;
+}
+
+function downloadCsv(name: string, rows: (string | number)[][]) {
+  const body = rows.map((row) => row.map(csvCell).join(",")).join("\n");
+  const url = URL.createObjectURL(new Blob([body], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+const LOG_HEAD = ["Date", "Tail", "From", "To", "Total", "Night", "Appr", "Day ldg", "Night ldg", "PIC", "Remarks"];
+
 function LogSheet() {
   const logbook = useEfb((s) => s.logbook);
+  const instructor = useEfb((s) => s.instructor);
+  const students = useEfb((s) => s.students);
   const draft = useEfb((s) => s.draftLog);
+  const add = useEfb((s) => s.addLog);
   const update = useEfb((s) => s.updateLog);
   const remove = useEfb((s) => s.removeLog);
   const total = logbook.reduce((n, e) => n + e.total, 0);
+  const dual = logbook.reduce((n, e) => n + e.dual, 0);
   const night90 = hoursIn(logbook, 90, (e) => e.nightLdg);
+  const heads = instructor ? ["Student", "Dual", "Ground", ...LOG_HEAD] : LOG_HEAD;
+  const blanks = Array.from({ length: 8 }, (_, i) => i);
+
   return (
-    <Sheet title="Logbook">
+    <Sheet title="Logbook" wide>
       <CurrencyCard />
-      <div className="flex items-center justify-between gap-3">
+      <div className="no-print flex flex-wrap items-center justify-between gap-3">
         <p className="font-mono text-sm">
-          {total.toFixed(1)} hr logged here · {night90} night landings in 90 days
+          {total.toFixed(1)} hr in this copy
+          {instructor ? ` · ${dual.toFixed(1)} dual given` : ""} · {night90} night landings in 90 days
         </p>
-        <Btn variant="primary" className="no-print shrink-0" onClick={draft}>
-          Draft this flight
-        </Btn>
+        <div className="flex flex-wrap gap-2">
+          <Btn onClick={add}>Add a line</Btn>
+          <Btn variant="primary" onClick={draft}>Add this flight</Btn>
+        </div>
       </div>
-      <ul className="flex flex-col gap-3">
-        {logbook.map((e) => (
-          <li key={e.id} className="rounded-[0.75rem] border border-line bg-bg p-3">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <label className="text-xs text-muted">
-                Date
-                <input
-                  type="date"
-                  className="field mt-1"
-                  value={e.date}
-                  onChange={(ev) => update(e.id, { date: ev.target.value })}
-                />
-              </label>
-              <label className="text-xs text-muted">
-                From
-                <input
-                  className="field mt-1 font-mono"
-                  value={e.from}
-                  onChange={(ev) => update(e.id, { from: ev.target.value.toUpperCase() })}
-                />
-              </label>
-              <label className="text-xs text-muted">
-                To
-                <input
-                  className="field mt-1 font-mono"
-                  value={e.to}
-                  onChange={(ev) => update(e.id, { to: ev.target.value.toUpperCase() })}
-                />
-              </label>
-              <Num label="Total hr" value={e.total} step={0.1} onChange={(n) => update(e.id, { total: n })} />
-            </div>
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <p className="font-mono text-xs text-muted">
-                Night {e.night} · Appr {e.approaches} · Ldg {e.dayLdg}/{e.nightLdg} · {e.remarks}
-              </p>
-              <Btn variant="danger" size="sm" className="no-print" onClick={() => remove(e.id)}>
-                Delete
-              </Btn>
-            </div>
-          </li>
-        ))}
-      </ul>
+      <p className="text-sm text-muted">
+        Working copy only. Print it and write on the blank lines, or export the CSV into your own book. CrossEFB does not keep the official log.
+      </p>
+      <div className="max-w-full overflow-x-auto">
+        <table className="w-full min-w-[880px] border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-line text-muted">
+              {heads.map((head) => (
+                <th key={head} className="px-1 py-2 font-medium">
+                  {head}
+                </th>
+              ))}
+              <th className="no-print px-1 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {logbook.map((entry) => (
+              <LogRow key={entry.id} entry={entry} instructor={instructor} students={students} onChange={update} onRemove={remove} />
+            ))}
+            {blanks.map((n) => (
+              <tr key={`blank-${n}`} className="log-blank border-b border-line">
+                {heads.map((head) => (
+                  <td key={head} className="h-8 border-b border-line" />
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {logbook.length === 0 && <p className="no-print text-sm text-muted">No lines yet. Add this flight, or write one in.</p>}
+    </Sheet>
+  );
+}
+
+function LogRow({
+  entry,
+  instructor,
+  students,
+  onChange,
+  onRemove,
+}: {
+  entry: LogEntry;
+  instructor: boolean;
+  students: Student[];
+  onChange: (id: string, patch: Partial<LogEntry>) => void;
+  onRemove: (id: string) => void;
+}) {
+  const cell = "field min-w-16";
+  const setStudent = (id: string) => {
+    const student = students.find((item) => item.id === id);
+    onChange(entry.id, { studentId: id, student: student?.name ?? "" });
+  };
+  return (
+    <tr className="border-b border-line align-top">
+      {instructor && (
+        <>
+          <td className="p-1">
+            <select className={cell} value={entry.studentId} onChange={(e) => setStudent(e.target.value)}>
+              <option value="">—</option>
+              {students.map((student) => (
+                <option key={student.id} value={student.id}>
+                  {student.name}
+                </option>
+              ))}
+              {entry.studentId && !students.some((student) => student.id === entry.studentId) && (
+                <option value={entry.studentId}>{entry.student || "Former student"}</option>
+              )}
+            </select>
+          </td>
+          <td className="p-1">
+            <Num label="" value={entry.dual} step={0.1} onChange={(n) => onChange(entry.id, { dual: n })} />
+          </td>
+          <td className="p-1">
+            <Num label="" value={entry.ground} step={0.1} onChange={(n) => onChange(entry.id, { ground: n })} />
+          </td>
+        </>
+      )}
+      <td className="p-1">
+        <input type="date" className={cell} value={entry.date} onChange={(e) => onChange(entry.id, { date: e.target.value })} />
+      </td>
+      <td className="p-1">
+        <input className={`${cell} font-mono`} value={entry.tail} onChange={(e) => onChange(entry.id, { tail: e.target.value.toUpperCase() })} />
+      </td>
+      <td className="p-1">
+        <input className={`${cell} font-mono`} value={entry.from} onChange={(e) => onChange(entry.id, { from: e.target.value.toUpperCase() })} />
+      </td>
+      <td className="p-1">
+        <input className={`${cell} font-mono`} value={entry.to} onChange={(e) => onChange(entry.id, { to: e.target.value.toUpperCase() })} />
+      </td>
+      <td className="p-1">
+        <Num label="" value={entry.total} step={0.1} onChange={(n) => onChange(entry.id, { total: n })} />
+      </td>
+      <td className="p-1">
+        <Num label="" value={entry.night} step={0.1} onChange={(n) => onChange(entry.id, { night: n })} />
+      </td>
+      <td className="p-1">
+        <Num label="" value={entry.approaches} onChange={(n) => onChange(entry.id, { approaches: n })} />
+      </td>
+      <td className="p-1">
+        <Num label="" value={entry.dayLdg} onChange={(n) => onChange(entry.id, { dayLdg: n })} />
+      </td>
+      <td className="p-1">
+        <Num label="" value={entry.nightLdg} onChange={(n) => onChange(entry.id, { nightLdg: n })} />
+      </td>
+      <td className="p-1">
+        <input className={cell} value={entry.pic} onChange={(e) => onChange(entry.id, { pic: e.target.value })} />
+      </td>
+      <td className="p-1">
+        <input className={`${cell} min-w-40`} value={entry.remarks} onChange={(e) => onChange(entry.id, { remarks: e.target.value })} />
+      </td>
+      <td className="no-print p-1">
+        <Btn variant="danger" size="sm" onClick={() => onRemove(entry.id)}>
+          Delete
+        </Btn>
+      </td>
+    </tr>
+  );
+}
+
+function StudentsSheet() {
+  const instructor = useEfb((s) => s.instructor);
+  const setInstructor = useEfb((s) => s.setInstructor);
+  const students = useEfb((s) => s.students);
+  const logbook = useEfb((s) => s.logbook);
+  const active = useEfb((s) => s.activeStudent);
+  const setActive = useEfb((s) => s.setActiveStudent);
+  const addStudent = useEfb((s) => s.addStudent);
+  const updateStudent = useEfb((s) => s.updateStudent);
+  const removeStudent = useEfb((s) => s.removeStudent);
+  const [name, setName] = useState("");
+  const [note, setNote] = useState("");
+  const chosen = students.find((student) => student.id === active) ?? students[0];
+  const lessons = chosen ? logbook.filter((entry) => entry.studentId === chosen.id || (entry.student && entry.student === chosen.name)) : [];
+  const dual = (id: string, studentName: string) =>
+    logbook.filter((entry) => entry.studentId === id || entry.student === studentName).reduce((n, entry) => n + entry.dual, 0);
+  const ground = (id: string, studentName: string) =>
+    logbook.filter((entry) => entry.studentId === id || entry.student === studentName).reduce((n, entry) => n + entry.ground, 0);
+
+  const exportStudents = () => {
+    const head = ["student", "note", "flights", "dual_given", "ground", "last_flight"];
+    const rows = students.map((student) => {
+      const flights = logbook.filter((entry) => entry.studentId === student.id || entry.student === student.name);
+      const last = flights.map((entry) => entry.date).sort().at(-1) ?? "";
+      return [student.name, student.note, flights.length, dual(student.id, student.name), ground(student.id, student.name), last];
+    });
+    downloadCsv(`crossefb-students-${new Date().toISOString().slice(0, 10)}.csv`, [head, ...rows]);
+  };
+
+  return (
+    <Sheet title="Students" wide>
+      <div className="no-print flex flex-wrap items-center justify-between gap-3">
+        <Btn variant={instructor ? "primary" : "secondary"} onClick={() => setInstructor(!instructor)}>
+          {instructor ? "Instructor mode on" : "Instructor mode off"}
+        </Btn>
+        {instructor && <Btn onClick={exportStudents}>Export CSV</Btn>}
+      </div>
+      <p className="text-sm text-muted">
+        A roster on this device. It tracks who you flew with and how much dual you gave. It is not an endorsement and not the student's logbook.
+      </p>
+      {instructor && (
+        <>
+          <form
+            className="no-print grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
+            onSubmit={(e) => {
+              e.preventDefault();
+              addStudent(name, note);
+              setName("");
+              setNote("");
+            }}
+          >
+            <input
+              aria-label="Student name"
+              className="field"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Student name"
+            />
+            <input
+              aria-label="Student note"
+              className="field"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Note, such as pre-solo"
+            />
+            <Btn variant="primary" type="submit">
+              Add student
+            </Btn>
+          </form>
+          <div className="max-w-full overflow-x-auto">
+            <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+              <thead>
+                <tr className="border-b border-line text-xs text-muted">
+                  <th className="px-2 py-2 font-medium">Student</th>
+                  <th className="px-2 py-2 font-medium">Note</th>
+                  <th className="px-2 py-2 font-medium">Flights</th>
+                  <th className="px-2 py-2 font-medium">Dual</th>
+                  <th className="px-2 py-2 font-medium">Ground</th>
+                  <th className="no-print px-2 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {students.map((student) => {
+                  const flights = logbook.filter((entry) => entry.studentId === student.id || entry.student === student.name);
+                  const on = student.id === (chosen?.id ?? "");
+                  return (
+                    <tr key={student.id} className="border-b border-line">
+                      <td className="p-1">
+                        <button className={`h-11 px-2 text-left ${on ? "text-amber" : ""}`} onClick={() => setActive(student.id)}>
+                          {student.name}
+                        </button>
+                      </td>
+                      <td className="p-1">
+                        <input
+                          className="field"
+                          value={student.note}
+                          onChange={(e) => updateStudent(student.id, { note: e.target.value })}
+                        />
+                      </td>
+                      <td className="px-2 font-mono">{flights.length}</td>
+                      <td className="px-2 font-mono">{dual(student.id, student.name).toFixed(1)}</td>
+                      <td className="px-2 font-mono">{ground(student.id, student.name).toFixed(1)}</td>
+                      <td className="no-print p-1">
+                        <Btn variant="danger" size="sm" onClick={() => removeStudent(student.id)}>
+                          Remove
+                        </Btn>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {Array.from({ length: 6 }, (_, i) => (
+                  <tr key={`stu-blank-${i}`} className="log-blank">
+                    <td className="h-8 border-b border-line" colSpan={5} />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {students.length === 0 && <p className="no-print text-sm text-muted">No students yet.</p>}
+          {chosen && (
+            <section>
+              <h3 className="text-sm font-semibold">{chosen.name}</h3>
+              <ul className="mt-2 flex flex-col gap-1 font-mono text-xs text-muted">
+                {lessons.length === 0 && <li>No lessons tagged to this student.</li>}
+                {lessons.map((entry) => (
+                  <li key={entry.id}>
+                    {entry.date} {entry.tail} {entry.from}-{entry.to} dual {entry.dual.toFixed(1)} ground {entry.ground.toFixed(1)} {entry.remarks}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </>
+      )}
     </Sheet>
   );
 }
@@ -716,6 +958,7 @@ const SHEETS: Record<DocId, () => ReactNode> = {
   frat: FratSheet,
   checks: CheckSheet,
   log: LogSheet,
+  students: StudentsSheet,
   rental: RentalSheet,
 };
 

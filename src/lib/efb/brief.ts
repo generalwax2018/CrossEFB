@@ -80,13 +80,13 @@ export function currency(entries: LogEntry[], pilot: PilotRecord, now = new Date
 }
 
 export function logbookCsv(entries: LogEntry[]): string {
-  const head = ["Date", "Aircraft", "From", "To", "Total", "Night", "Approaches", "Day landings", "Night landings", "PIC", "Remarks"];
+  const head = ["Date", "Aircraft", "From", "To", "Total", "Night", "Approaches", "Day landings", "Night landings", "PIC", "Student", "Dual given", "Ground", "Remarks"];
   const esc = (v: string | number) => {
     const s = String(v ?? "");
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const rows = entries.map((e) =>
-    [e.date, e.tail, e.from, e.to, e.total, e.night, e.approaches, e.dayLdg, e.nightLdg, e.pic, e.remarks].map(esc).join(","),
+    [e.date, e.tail, e.from, e.to, e.total, e.night, e.approaches, e.dayLdg, e.nightLdg, e.pic, e.student ?? "", e.dual ?? 0, e.ground ?? 0, e.remarks].map(esc).join(","),
   );
   return [head.join(","), ...rows].join("\n") + "\n";
 }

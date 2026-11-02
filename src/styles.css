@@ -419,6 +419,33 @@
   .no-print {
     display: none !important;
   }
+
+  .log-blank {
+    display: table-row !important;
+  }
+
+  #flight-file input,
+  #flight-file select,
+  #flight-file textarea {
+    border: none;
+    background: transparent;
+    color: #1a1408;
+    height: auto;
+    padding: 0;
+  }
+
+  .log-page {
+    page: crossefb-log;
+  }
+}
+
+.log-blank {
+  display: none;
+}
+
+@page crossefb-log {
+  size: landscape;
+  margin: 0.45in;
 }
 
 @media (prefers-reduced-motion: reduce) {

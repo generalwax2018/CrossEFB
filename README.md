@@ -25,7 +25,7 @@ This is **not a certified EFB** and not a navigation GPS. Do not use it as a sol
 
 **Planning and records**
 - Route by search, tap, or typed string; saved plans; your own aircraft profiles.
-- Flight file: nav log, weight and balance, takeoff and landing, briefing with a go/no-go summary, risk score, checklist, logbook with currency tracking and CSV export, rental checkout.
+- Flight file: nav log, weight and balance, takeoff and landing, briefing with a go/no-go summary, risk score, checklist, logbook, and rental checkout. The logbook is a working copy: print it and write on the blank lines, or export a CSV. It does not replace the official book. Instructor mode keeps a student roster on this device and tags dual given and ground to each student.
 - Offline: save route charts and plates, or a whole map area; the app shell opens without signal.
 - End-to-end encrypted sync between devices with a sync code, plus backup/restore to a file.
 - Data sources panel showing the edition or fetch time of every feed.

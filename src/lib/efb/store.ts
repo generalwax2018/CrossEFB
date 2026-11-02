@@ -5,7 +5,7 @@ import { getAirport } from "./airports";
 import { buildLegs, totals } from "./nav";
 import { isLocalNight } from "./sun";
 import type { BaseChart } from "./layers";
-import type { Aircraft, ChartMode, DocId, FratManual, LogEntry, PilotRecord, Rental, SavedPlan, Tab, WindMode } from "./types";
+import type { Aircraft, ChartMode, DocId, FratManual, LogEntry, PilotRecord, Rental, SavedPlan, Student, Tab, WindMode } from "./types";
 
 const emptyManual: FratManual = {
   sleep: false,
@@ -18,50 +18,25 @@ const emptyManual: FratManual = {
   afterWork: false,
 };
 
-const seedLog: LogEntry[] = [
-  {
-    id: "log-pattern",
-    date: "2026-10-18",
-    from: "KAPA",
-    to: "KBJC",
-    total: 1.2,
-    night: 0,
-    approaches: 0,
-    dayLdg: 3,
-    nightLdg: 0,
-    pic: "Self",
-    remarks: "Pattern work",
-    tail: "N172EF",
-  },
-  {
-    id: "log-ils",
-    date: "2026-09-02",
-    from: "KAPA",
-    to: "KCOS",
-    total: 1.6,
-    night: 0.4,
-    approaches: 1,
-    dayLdg: 1,
-    nightLdg: 1,
-    pic: "Self",
-    remarks: "Practice approach",
-    tail: "N172EF",
-  },
-  {
-    id: "log-mtn",
-    date: "2026-06-11",
-    from: "KAPA",
-    to: "KEGE",
-    total: 1.8,
-    night: 0,
-    approaches: 0,
-    dayLdg: 1,
-    nightLdg: 0,
-    pic: "Self",
-    remarks: "Mountain checkout",
-    tail: "N172EF",
-  },
-];
+const SAMPLE_LOG_IDS = new Set(["log-pattern", "log-ils", "log-mtn"]);
+
+function cleanLog(entries: LogEntry[] | undefined): LogEntry[] {
+  if (!entries?.length) return [];
+  return entries
+    .filter((entry) => entry && !SAMPLE_LOG_IDS.has(entry.id))
+    .map((entry) => ({
+      ...entry,
+      studentId: entry.studentId ?? "",
+      student: entry.student ?? "",
+      dual: typeof entry.dual === "number" ? entry.dual : 0,
+      ground: typeof entry.ground === "number" ? entry.ground : 0,
+    }));
+}
+
+function cleanStudents(entries: Student[] | undefined): Student[] {
+  if (!entries?.length) return [];
+  return entries.filter((student) => Boolean(student?.id && student.name));
+}
 
 const defaultRental: Rental = {
   pic: "",
@@ -129,6 +104,9 @@ type EfbState = {
   fratNote: string;
   checks: Record<string, boolean>;
   logbook: LogEntry[];
+  instructor: boolean;
+  students: Student[];
+  activeStudent: string;
   rental: Rental;
   setTab: (tab: Tab) => void;
   setDoc: (doc: DocId) => void;
@@ -161,8 +139,14 @@ type EfbState = {
   toggleCheck: (id: string) => void;
   resetChecks: () => void;
   draftLog: () => void;
+  addLog: () => void;
   updateLog: (id: string, patch: Partial<LogEntry>) => void;
   removeLog: (id: string) => void;
+  setInstructor: (on: boolean) => void;
+  addStudent: (name: string, note: string) => void;
+  updateStudent: (id: string, patch: Partial<Student>) => void;
+  removeStudent: (id: string) => void;
+  setActiveStudent: (id: string) => void;
   setRental: (patch: Partial<Rental>) => void;
 };
 
@@ -289,7 +273,10 @@ export const useEfb = create<EfbState>()(
       fratManual: emptyManual,
       fratNote: "",
       checks: {},
-      logbook: seedLog,
+      logbook: [],
+      instructor: false,
+      students: [],
+      activeStudent: "",
       rental: defaultRental,
       setTab: (tab) => set({ tab }),
       setDoc: (doc) => set({ doc, tab: "docs" }),
@@ -403,19 +390,48 @@ export const useEfb = create<EfbState>()(
           const sum = totals(legs);
           const origin = getAirport(s.route[0] ?? "");
           const night = origin ? isLocalNight(origin.lat, origin.lon, s.departHour) : s.departHour >= 19 || s.departHour < 6;
+          const hours = Math.round((sum.min / 60) * 10) / 10 || 0;
+          const student = s.instructor ? s.students.find((st) => st.id === s.activeStudent) : undefined;
           const entry: LogEntry = {
             id: `log-${Date.now()}`,
             date: new Date().toISOString().slice(0, 10),
             from: s.route[0] ?? "",
             to: s.route[s.route.length - 1] ?? "",
-            total: Math.round((sum.min / 60) * 10) / 10 || 0,
-            night: night ? Math.round((sum.min / 60) * 10) / 10 : 0,
+            total: hours,
+            night: night ? hours : 0,
             approaches: 0,
             dayLdg: night ? 0 : 1,
             nightLdg: night ? 1 : 0,
-            pic: s.rental.pic || "Self",
+            pic: s.rental.pic,
             remarks: s.route.join(" "),
             tail: aircraft.tail,
+            studentId: student?.id ?? "",
+            student: student?.name ?? "",
+            dual: student ? hours : 0,
+            ground: 0,
+          };
+          return { logbook: [entry, ...s.logbook], doc: "log" };
+        }),
+      addLog: () =>
+        set((s) => {
+          const student = s.instructor ? s.students.find((st) => st.id === s.activeStudent) : undefined;
+          const entry: LogEntry = {
+            id: `log-${Date.now()}`,
+            date: new Date().toISOString().slice(0, 10),
+            from: "",
+            to: "",
+            total: 0,
+            night: 0,
+            approaches: 0,
+            dayLdg: 0,
+            nightLdg: 0,
+            pic: s.rental.pic,
+            remarks: "",
+            tail: resolveAircraft(s.aircraft).tail,
+            studentId: student?.id ?? "",
+            student: student?.name ?? "",
+            dual: 0,
+            ground: 0,
           };
           return { logbook: [entry, ...s.logbook], doc: "log" };
         }),
@@ -424,6 +440,30 @@ export const useEfb = create<EfbState>()(
           logbook: s.logbook.map((e) => (e.id === id ? { ...e, ...patch } : e)),
         })),
       removeLog: (id) => set((s) => ({ logbook: s.logbook.filter((e) => e.id !== id) })),
+      setInstructor: (instructor) => set({ instructor }),
+      addStudent: (name, note) =>
+        set((s) => {
+          const trimmed = name.trim();
+          if (!trimmed) return s;
+          const student = { id: `stu-${Date.now()}`, name: trimmed, note: note.trim() };
+          return { students: [student, ...s.students], activeStudent: student.id, instructor: true };
+        }),
+      updateStudent: (id, patch) =>
+        set((s) => {
+          const students = s.students.map((student) => (student.id === id ? { ...student, ...patch } : student));
+          const name = students.find((student) => student.id === id)?.name;
+          const logbook =
+            patch.name && name
+              ? s.logbook.map((entry) => (entry.studentId === id ? { ...entry, student: name } : entry))
+              : s.logbook;
+          return { students, logbook };
+        }),
+      removeStudent: (id) =>
+        set((s) => ({
+          students: s.students.filter((student) => student.id !== id),
+          activeStudent: s.activeStudent === id ? "" : s.activeStudent,
+        })),
+      setActiveStudent: (activeStudent) => set({ activeStudent }),
       setRental: (patch) => set((s) => ({ rental: { ...s.rental, ...patch } })),
     }),
     {
@@ -454,6 +494,9 @@ export const useEfb = create<EfbState>()(
         fratNote: s.fratNote,
         checks: s.checks,
         logbook: s.logbook,
+        instructor: s.instructor,
+        students: s.students,
+        activeStudent: s.activeStudent,
         rental: s.rental,
         doc: s.doc,
       }),
@@ -472,7 +515,10 @@ export const useEfb = create<EfbState>()(
           nearestOpen: false,
           platesFor: null,
           checks: saved.checks ?? {},
-          logbook: saved.logbook?.length ? saved.logbook : current.logbook,
+          logbook: cleanLog(saved.logbook ?? current.logbook),
+          instructor: Boolean(saved.instructor),
+          students: cleanStudents(saved.students),
+          activeStudent: saved.activeStudent ?? "",
           tab: "chart",
           flying: false,
           progressNm: 0,
