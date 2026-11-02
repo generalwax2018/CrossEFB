@@ -34,10 +34,21 @@ test("tfr on route", () => {
 test("go no-go", () => {
   const base = {
     originId: "KAPA", destId: "KBJC", originCat: "VFR", destCat: "VFR", surfaceWind: 8, crosswind: 4, maxXwind: 15, personalXwind: 12,
-    fuelLeftGal: 30, reserveGal: 4.3, wbOk: true, wbReason: "inside", toMargin: 3, densityAlt: 6000, night: false, tfrIds: [], currency: [], passengers: false,
+    fuelLeftGal: 30, reserveGal: 4.3, wbOk: true, wbReason: "inside", toMargin: 3, densityAlt: 6000, night: false, tfrIds: [], currency: [], passengers: false, notamsChecked: true,
   };
   assert.equal(goNoGo(base).verdict, "go");
   assert.equal(goNoGo({ ...base, destCat: "IFR" }).verdict, "nogo");
   assert.equal(goNoGo({ ...base, crosswind: 13 }).verdict, "caution");
   assert.equal(goNoGo({ ...base, tfrIds: ["6/1"] }).verdict, "nogo");
+});
+
+test("notam closures and unchecked notams caution", () => {
+  const base = {
+    originId: "KAPA", destId: "KBJC", originCat: "VFR", destCat: "VFR", surfaceWind: 8, crosswind: 4, maxXwind: 15, personalXwind: 12,
+    fuelLeftGal: 30, reserveGal: 4.3, wbOk: true, wbReason: "inside", toMargin: 3, densityAlt: 6000, night: false, tfrIds: [], currency: [], passengers: false,
+  };
+  assert.equal(goNoGo(base).verdict, "caution");
+  const r = goNoGo({ ...base, notamsChecked: true, notamAlerts: ["KBJC: RWY 12L/30R CLSD"] });
+  assert.equal(r.verdict, "caution");
+  assert.ok(r.items.some((i) => i.text.includes("RWY 12L/30R CLSD")));
 });

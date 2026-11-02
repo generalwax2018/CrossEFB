@@ -4,6 +4,7 @@ import { DEFAULT_LOADS, isCustomId, profileById, resolveAircraft } from "./aircr
 import { getAirport } from "./airports";
 import { buildLegs, totals } from "./nav";
 import { isLocalNight } from "./sun";
+import type { BaseChart } from "./layers";
 import type { Aircraft, ChartMode, DocId, FratManual, LogEntry, PilotRecord, Rental, SavedPlan, Tab, WindMode } from "./types";
 
 const emptyManual: FratManual = {
@@ -78,6 +79,14 @@ const defaultPilot: PilotRecord = { name: "", flightReview: "", medicalExpires: 
 
 type EfbState = {
   windMode: WindMode;
+  baseChart: BaseChart;
+  showRadar: boolean;
+  showTraffic: boolean;
+  syncKey: string;
+  platesFor: string | null;
+  setBaseChart: (c: BaseChart) => void;
+  setSyncKey: (key: string) => void;
+  setPlatesFor: (icao: string | null) => void;
   showTfrs: boolean;
   showMetars: boolean;
   showGlide: boolean;
@@ -86,7 +95,7 @@ type EfbState = {
   pilot: PilotRecord;
   nearestOpen: boolean;
   setWindMode: (mode: WindMode) => void;
-  setLayer: (layer: "showTfrs" | "showMetars" | "showGlide", on: boolean) => void;
+  setLayer: (layer: "showTfrs" | "showMetars" | "showGlide" | "showRadar" | "showTraffic", on: boolean) => void;
   savePlan: (name: string) => void;
   loadPlan: (id: string) => void;
   deletePlan: (id: string) => void;
@@ -95,7 +104,7 @@ type EfbState = {
   setPilot: (patch: Partial<PilotRecord>) => void;
   setNearestOpen: (open: boolean) => void;
   /** Replace saved data from a backup file. Returns false if it was not a CrossEFB backup. */
-  restore: (data: unknown) => boolean;
+  restore: (data: unknown, opts?: { keepUi?: boolean }) => boolean;
   tab: Tab;
   doc: DocId;
   route: string[];
@@ -170,6 +179,14 @@ export const useEfb = create<EfbState>()(
   persist(
     (set) => ({
       windMode: "manual",
+      baseChart: "sectional",
+      showRadar: false,
+      showTraffic: true,
+      syncKey: "",
+      platesFor: null,
+      setBaseChart: (baseChart) => set({ baseChart }),
+      setSyncKey: (syncKey) => set({ syncKey }),
+      setPlatesFor: (platesFor) => set({ platesFor }),
       showTfrs: true,
       showMetars: true,
       showGlide: true,
@@ -230,7 +247,7 @@ export const useEfb = create<EfbState>()(
         })),
       setPilot: (patch) => set((s) => ({ pilot: { ...s.pilot, ...patch } })),
       setNearestOpen: (nearestOpen) => set({ nearestOpen }),
-      restore: (data) => {
+      restore: (data, opts) => {
         const body = data as { app?: string; state?: Record<string, unknown> } | null;
         if (!body || body.app !== "crossefb" || typeof body.state !== "object" || !body.state) return false;
         const st = body.state;
@@ -239,7 +256,11 @@ export const useEfb = create<EfbState>()(
           ...st,
           aircraft: resolveAircraft((st.aircraft as Aircraft) ?? s.aircraft),
           pilot: { ...defaultPilot, ...(st.pilot as Partial<PilotRecord> | undefined) },
-          tab: "chart",
+          tab: opts?.keepUi ? s.tab : "chart",
+          doc: opts?.keepUi ? s.doc : ((st.doc as EfbState["doc"]) ?? s.doc),
+          lat: s.lat,
+          lon: s.lon,
+          pxPerNm: s.pxPerNm,
           flying: false,
           progressNm: 0,
         }));
@@ -410,6 +431,10 @@ export const useEfb = create<EfbState>()(
       skipHydration: true,
       partialize: (s) => ({
         windMode: s.windMode,
+        baseChart: s.baseChart,
+        showRadar: s.showRadar,
+        showTraffic: s.showTraffic,
+        syncKey: s.syncKey,
         showTfrs: s.showTfrs,
         showMetars: s.showMetars,
         showGlide: s.showGlide,
@@ -445,6 +470,7 @@ export const useEfb = create<EfbState>()(
           plans: Array.isArray(saved.plans) ? saved.plans : [],
           myAircraft: Array.isArray(saved.myAircraft) ? saved.myAircraft.map((a) => resolveAircraft(a)) : [],
           nearestOpen: false,
+          platesFor: null,
           checks: saved.checks ?? {},
           logbook: saved.logbook?.length ? saved.logbook : current.logbook,
           tab: "chart",

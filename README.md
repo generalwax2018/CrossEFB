@@ -1,31 +1,63 @@
 # CrossEFB
 
-Electronic flight bag for Android, PC, and Chromebook. It runs in the browser, and it can be installed on the home screen. ForeFlight stays on Apple.
+Electronic flight bag for Android, PC, and Chromebook. It runs in the browser, installs on the home screen, and has an optional Android shell for ADS-B. ForeFlight stays on Apple.
 
 This is **not a certified EFB** and not a navigation GPS. Do not use it as a sole source for navigation. Check the official chart, the weather, and the NOTAMs before anyone flies.
 
 ## What it does
 
-- Moving chart on the current FAA VFR sectional. The app downloads the national set from the FAA and replaces it when the 56-day edition changes. OpenStreetMap streets show only where a sheet is not on disk yet. Class B / C / D rings come from the airport catalog. Day and night chart.
-- Airport search, origin, destination, stops, and direct-to. Tap the route line to insert the nearest field.
-- Track uses this device's GPS: own-ship, groundspeed, track, GPS altitude, and bearing to the next fix. The screen stays awake. Drag the chart to look ahead, then follow again. The play button only previews the planned route.
-- Sectional tiles already viewed stay on the device if the signal drops. The app itself still has to load once while online.
-- Wind, TAS, groundspeed, magnetic course, ETE, and fuel against usable. Sunrise through civil twilight. Favored runway from the live METAR.
-- Live METAR and TAF from aviationweather.gov. No sample weather.
-- G-AIRMET, SIGMET, and recent PIREP overlay from the same National Weather Service feed. The chart reloads them every few minutes and names what is overhead. The cloud button hides the layer.
-- One flight file from the same plan: nav log, weight and balance, takeoff and landing, briefing, risk score, checklist, logbook, and rental checkout. Sample aircraft are a 172S, 182T, PA-28-181, and SR22. Those numbers are not your POH.
+**Charts**
+- FAA VFR sectional (downloaded from the FAA and replaced each 56-day edition), plus Terminal Area, IFR Low, and IFR High from the FAA chart tile service. Class B/C/D rings from the airport catalog.
+- Approach plates, airport diagrams, departures, arrivals, and minimums from the FAA d-TPP, shown in the app with pdf.js, including night colors.
+- Five display modes: Night, Day, Red, Green, and Haze (high-contrast yellow).
 
-Not in this app: approach plates, IFR enroute charts, terminal area charts, NOTAMs, traffic, radar, or flight-plan filing.
+**Weather and airspace**
+- Live METAR/TAF and flight-category dots for every reporting airport in view (aviationweather.gov).
+- NEXRAD radar, G-AIRMET, SIGMET, and PIREP overlays.
+- TFRs from tfr.faa.gov, drawn on the chart and checked against the route.
+- NOTAMs from the FAA NOTAM API once keys are set (see below).
+- Forecast winds aloft per leg from the NWS FB product, or one manual wind.
 
-The shared navigation math lives in `src/lib/efb`. A native Android or desktop shell can call the same functions later. This repository is the web client.
+**Flying**
+- GPS track with own-ship, groundspeed, track, altitude, next fix, desired track, distance, and ETE. Screen stays awake.
+- ADS-B traffic and receiver GPS from GDL 90 receivers (Stratux, Sentry, …) through the Android shell in `android-shell/`.
+- No-wind glide range ring and an emergency Nearest list with Direct-To.
+
+**Planning and records**
+- Route by search, tap, or typed string; saved plans; your own aircraft profiles.
+- Flight file: nav log, weight and balance, takeoff and landing, briefing with a go/no-go summary, risk score, checklist, logbook with currency tracking and CSV export, rental checkout.
+- Offline: save route charts and plates, or a whole map area; the app shell opens without signal.
+- End-to-end encrypted sync between devices with a sync code, plus backup/restore to a file.
+- Data sources panel showing the edition or fetch time of every feed.
+
+Not in this app: flight-plan filing (it hands off to 1800wxbrief), terrain/synthetic vision.
 
 ## Run
 
 ```bash
 npm install
-npm run dev
+npm run dev        # http://127.0.0.1:8080
+npm run test:efb   # flight-logic unit tests
+npm run build
 ```
 
-Open http://127.0.0.1:8080.
+### Server environment
 
-Plans, aircraft, the logbook, and wind stay in the browser (`localStorage`). There is no account.
+| Variable | Purpose |
+| --- | --- |
+| `FAA_NOTAM_CLIENT_ID`, `FAA_NOTAM_CLIENT_SECRET` | FAA NOTAM API credentials (api.faa.gov). NOTAMs stay off without them. |
+| `FAA_NOTAM_API_URL` | Optional endpoint override (for the FAA NMS successor). |
+| `DATABASE_URL` | Postgres for encrypted sync. Without it a local PGLite database is used. |
+
+Never commit these values. Set them in the hosting provider's settings.
+
+### Sync privacy
+
+The sync code never leaves the device. The server stores a SHA-256 of the code as the row id and AES-GCM ciphertext made on the device, so it cannot read plans, aircraft, or the logbook.
+
+## Code map
+
+- `src/lib/efb` — navigation math, parsers (winds aloft, GDL 90, d-TPP, NOTAMs), stores, and tests.
+- `src/components/efb` — the UI.
+- `src/routes/api` — server routes for charts, weather, TFRs, plates, NOTAMs, and sync.
+- `android-shell/` — Capacitor app that forwards ADS-B packets. See its README.

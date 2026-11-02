@@ -376,10 +376,10 @@ export function WindRunway({
         return (
           <line
             key={t}
-            x1={c + Math.cos(a) * r1}
-            y1={c + Math.sin(a) * r1}
-            x2={c + Math.cos(a) * r}
-            y2={c + Math.sin(a) * r}
+            x1={(c + Math.cos(a) * r1).toFixed(2)}
+            y1={(c + Math.sin(a) * r1).toFixed(2)}
+            x2={(c + Math.cos(a) * r).toFixed(2)}
+            y2={(c + Math.sin(a) * r).toFixed(2)}
             stroke={long ? "var(--color-muted)" : "var(--color-line-strong)"}
             strokeWidth={long ? 1.2 : 0.8}
           />

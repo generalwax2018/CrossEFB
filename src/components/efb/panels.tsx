@@ -54,12 +54,16 @@ import { fitAirports } from "./chart";
 import { useLegs } from "@/lib/efb/live-store";
 import {
   AirportLinks,
+  BaseChartPicker,
+  DataSourcesButton,
+  NotamList,
   DataBackup,
   LayerToggles,
   MyAircraft,
   NearestButton,
   OfflineSave,
   SavedPlans,
+  SyncPanel,
   WindModeSwitch,
 } from "./extras";
 import {
@@ -568,7 +572,7 @@ export function ChartTools() {
       </div>
 
       {open === "layers" && (
-        <div className="glass absolute top-0 right-[3.75rem] w-80 max-w-[calc(100vw-6rem)] animate-pop rounded-card p-3">
+        <div className="glass absolute top-0 right-[3.75rem] max-h-[calc(100dvh-9rem)] w-80 max-w-[calc(100vw-6rem)] animate-pop overflow-auto rounded-card p-3">
           <p className="eyebrow mb-2">Display</p>
           <div className="grid grid-cols-5 gap-1 rounded-[0.75rem] border border-line bg-bg p-1" role="radiogroup" aria-label="Display mode">
             {MODES.map((m) => {
@@ -594,6 +598,8 @@ export function ChartTools() {
               );
             })}
           </div>
+          <p className="eyebrow mt-4 mb-2">Chart</p>
+          <BaseChartPicker />
           <p className="eyebrow mt-4 mb-2">Layers</p>
           <LayerToggles />
           <p className="eyebrow mt-4 mb-2">Legend</p>
@@ -608,7 +614,12 @@ export function ChartTools() {
             <LegendRow swatch={<span className="size-2.5 rounded-sm bg-[var(--chart-wx-sig)]" />}>SIGMET / conv</LegendRow>
             <LegendRow swatch={<span className="size-2.5 rounded-sm border-2 border-[#ff3df0] bg-[#ff3df0]/25" />}>TFR</LegendRow>
             <LegendRow swatch={<span className="h-0 w-4 border-t-2 border-dashed border-[var(--chart-own)]" />}>Glide range</LegendRow>
+            <li className="col-span-2 flex items-center gap-2">
+              <span className="h-2.5 w-24 rounded-sm bg-[linear-gradient(90deg,#04e9e7,#019ff4,#02fd02,#01c501,#fdf802,#fd9500,#fd0000,#bc0000,#f800fd)]" />
+              Radar: light → extreme
+            </li>
           </ul>
+          <DataSourcesButton />
         </div>
       )}
 
@@ -780,6 +791,7 @@ export function AirportCard() {
         />
       </div>
       <AirportLinks airport={airport} />
+      <NotamList icaos={[airport.icao]} compact />
       <p className="mt-2 text-[0.6875rem] leading-snug text-faint">Planning data — confirm class and frequencies in the Chart Supplement.</p>
     </section>
   );
@@ -1064,6 +1076,7 @@ export function PlanPanel() {
         </div>
       </section>
       <OfflineSave />
+      <SyncPanel />
       <DataBackup />
       <p className="text-xs leading-relaxed text-faint">
         Planning aid only. Not a certified EFB. Check official charts, weather, and NOTAMs.

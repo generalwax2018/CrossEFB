@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Download,
   ExternalLink,
   HardDriveDownload,
   Navigation,
+  RefreshCcw,
   Save,
   Siren,
   Trash2,
@@ -12,8 +13,13 @@ import {
   X,
 } from "lucide-react";
 import { getAirport } from "@/lib/efb/airports";
+import { dtppCycle } from "@/lib/efb/plates";
+import { BASE_CHARTS, FAA_LAYERS, RADAR_META, boxTiles, type BaseChart } from "@/lib/efb/layers";
 import { runwayFeet } from "@/lib/efb/docs";
 import { useLive } from "@/lib/efb/live-store";
+import { useNotams } from "@/lib/efb/use-notams";
+import { newSyncCode, normalizeCode } from "@/lib/efb/sync";
+import { resetSyncRev, useSyncStatus } from "@/lib/efb/sync-engine";
 import { fmtMin, fmtNm, haversineNm, hdgText, magCourse, nearestAirports, trueCourse } from "@/lib/efb/nav";
 import { useEfb } from "@/lib/efb/store";
 import { useTrack } from "@/lib/efb/track";
@@ -193,58 +199,114 @@ function tilesForRoute(ids: string[], corridorNm = 15, zooms = [8, 9, 10, 11], c
   return out;
 }
 
+type Job = { label: string; done: number; total: number; ok: number; running: boolean };
+
+/** Fetch a list of URLs through the service worker so they land in the offline cache. */
+async function warm(urls: string[], onProgress: (done: number, ok: number) => void, stop: { current: boolean }) {
+  let i = 0;
+  let done = 0;
+  let ok = 0;
+  const worker = async () => {
+    while (i < urls.length && !stop.current) {
+      const url = urls[i++];
+      try {
+        const cross = !url.startsWith("/");
+        const res = await fetch(url, cross ? { mode: "no-cors" } : undefined);
+        if (res.ok || res.type === "opaque") ok++;
+      } catch {
+        /* keep going */
+      }
+      done++;
+      if (done % 5 === 0 || done === urls.length) onProgress(done, ok);
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
+  return { done, ok };
+}
+
+function sectionalUrls(z: number[], box: { s: number; w: number; n: number; e: number }, cap: number) {
+  return z.flatMap((zz) => boxTiles(zz, box.s, box.w, box.n, box.e, cap).map((t) => `/api/charts/tile/${t.z}/${t.x}/${t.y}`));
+}
+
+function regionUrls(base: BaseChart, box: { s: number; w: number; n: number; e: number }): string[] {
+  if (base === "sectional") return sectionalUrls([7, 8, 9, 10, 11], box, 3000).slice(0, 4000);
+  const layer = FAA_LAYERS[base];
+  const out: string[] = [];
+  for (let z = layer.minZ; z <= layer.maxZ; z++) {
+    for (const t of boxTiles(z, box.s, box.w, box.n, box.e, 4000)) out.push(layer.url(t.z, t.x, t.y));
+    if (out.length > 4000) break;
+  }
+  if (base === "tac") out.push(...sectionalUrls([8, 9, 10, 11], box, 2000));
+  return out.slice(0, 5000);
+}
+
 export function OfflineSave() {
   const route = useEfb((s) => s.route);
+  const base = useEfb((s) => s.baseChart);
   const online = useLive((s) => s.online);
-  const [state, setState] = useState<{ done: number; total: number; ok: number; running: boolean } | null>(null);
+  const [job, setJob] = useState<Job | null>(null);
   const stop = useRef(false);
 
-  const run = async () => {
-    const tiles = tilesForRoute(route);
+  const start = async (label: string, urls: string[]) => {
     stop.current = false;
-    setState({ done: 0, total: tiles.length, ok: 0, running: true });
-    let i = 0;
-    let done = 0;
-    let ok = 0;
-    const worker = async () => {
-      while (i < tiles.length && !stop.current) {
-        const key = tiles[i++];
-        try {
-          const res = await fetch(`/api/charts/tile/${key}`);
-          if (res.ok) ok++;
-        } catch {
-          /* keep going */
-        }
-        done++;
-        if (done % 4 === 0 || done === tiles.length) setState({ done, total: tiles.length, ok, running: true });
-      }
-    };
-    await Promise.all([worker(), worker(), worker(), worker()]);
-    setState({ done, total: tiles.length, ok, running: false });
+    setJob({ label, done: 0, total: urls.length, ok: 0, running: true });
+    const r = await warm(urls, (done, ok) => setJob({ label, done, total: urls.length, ok, running: true }), stop);
+    setJob({ label, done: r.done, total: urls.length, ok: r.ok, running: false });
   };
 
-  if (route.length < 1) return null;
+  const routeJob = async () => {
+    const tiles = tilesForRoute(route).map((k) => `/api/charts/tile/${k}`);
+    // Plates for every airport on the route: the index, then each chart PDF.
+    const pdfs: string[] = [];
+    for (const id of route) {
+      try {
+        const r = await fetch(`/api/plates/${id}`);
+        const b = (await r.json()) as { cycle?: string; airport?: { plates: { pdf: string; code: string }[] } | null };
+        for (const p of b.airport?.plates ?? []) {
+          if (["APD", "IAP", "DP", "ODP", "STR", "MIN"].includes(p.code)) pdfs.push(`/api/plates/pdf/${b.cycle}/${p.pdf}`);
+        }
+      } catch {
+        /* offline or no plates */
+      }
+    }
+    await start("Route charts and plates", [...tiles, ...new Set(pdfs)]);
+  };
+
+  const areaJob = () => {
+    const s = useEfb.getState();
+    const el = document.querySelector('svg[aria-label="Moving chart"]');
+    const rect = el?.getBoundingClientRect();
+    const w = rect?.width ?? 800;
+    const h = rect?.height ?? 600;
+    const latSpan = h / s.pxPerNm / 60;
+    const lonSpan = w / s.pxPerNm / (60 * Math.cos((s.lat * Math.PI) / 180));
+    const box = { s: s.lat - latSpan / 2, n: s.lat + latSpan / 2, w: s.lon - lonSpan / 2, e: s.lon + lonSpan / 2 };
+    const label = BASE_CHARTS.find((c) => c.id === s.baseChart)?.label ?? "Chart";
+    void start(`${label} for this map area`, regionUrls(s.baseChart, box));
+  };
+
   return (
     <section className="flex flex-col gap-2">
       <SectionTitle>Offline</SectionTitle>
       <Card className="flex flex-col gap-2 p-3">
         <p className="text-xs text-muted">
-          Download the sectional within 15 NM of this route so the chart still draws without signal. Weather and TFRs
+          Save charts before you lose signal. The app itself opens offline after one online visit. Weather, TFRs, and NOTAMs
           need a connection.
         </p>
-        {state && (
+        {job && (
           <div>
-            <div className="h-2 overflow-hidden rounded-full bg-raised">
-              <div className="h-full rounded-full bg-good" style={{ width: `${state.total ? (state.done / state.total) * 100 : 100}%` }} />
+            <p className="text-xs font-medium">{job.label}</p>
+            <div className="mt-1 h-2 overflow-hidden rounded-full bg-raised">
+              <div className="h-full rounded-full bg-good" style={{ width: `${job.total ? (job.done / job.total) * 100 : 100}%` }} />
             </div>
             <p className="tnum mt-1 font-mono text-[0.6875rem] text-faint">
-              {state.running
-                ? `${state.done} / ${state.total} tiles`
-                : `${state.ok} tiles saved${state.total - state.ok > 0 ? ` · ${state.total - state.ok} had no chart` : ""}`}
+              {job.running
+                ? `${job.done} / ${job.total}`
+                : `${job.ok} saved${job.total - job.ok > 0 ? ` · ${job.total - job.ok} had no chart` : ""}`}
             </p>
           </div>
         )}
-        {state?.running ? (
+        {job?.running ? (
           <Btn
             size="sm"
             onClick={() => {
@@ -254,9 +316,17 @@ export function OfflineSave() {
             Stop
           </Btn>
         ) : (
-          <Btn size="sm" icon={<HardDriveDownload className="size-3.5" />} disabled={!online} onClick={() => void run()}>
-            {online ? "Save route for offline" : "Offline now"}
-          </Btn>
+          <div className="grid grid-cols-1 gap-2">
+            {route.length > 0 && (
+              <Btn size="sm" icon={<HardDriveDownload className="size-3.5" />} disabled={!online} onClick={() => void routeJob()}>
+                Save route charts and plates
+              </Btn>
+            )}
+            <Btn size="sm" icon={<HardDriveDownload className="size-3.5" />} disabled={!online} onClick={areaJob}>
+              Save {base === "sectional" ? "sectional" : BASE_CHARTS.find((c) => c.id === base)?.label} for this map area
+            </Btn>
+            {!online && <p className="text-xs text-warn">You are offline now.</p>}
+          </div>
         )}
       </Card>
     </section>
@@ -344,13 +414,17 @@ export function LayerToggles() {
   const showTfrs = useEfb((s) => s.showTfrs);
   const showMetars = useEfb((s) => s.showMetars);
   const showGlide = useEfb((s) => s.showGlide);
+  const showRadar = useEfb((s) => s.showRadar);
+  const showTraffic = useEfb((s) => s.showTraffic);
   const showAdvisories = useEfb((s) => s.showAdvisories);
   const setShowAdvisories = useEfb((s) => s.setShowAdvisories);
   const setLayer = useEfb((s) => s.setLayer);
   const rows: { label: string; sub: string; on: boolean; set: (on: boolean) => void }[] = [
     { label: "TFRs", sub: "FAA temporary flight restrictions", on: showTfrs, set: (on) => setLayer("showTfrs", on) },
     { label: "Airport weather", sub: "Flight category dots from METARs", on: showMetars, set: (on) => setLayer("showMetars", on) },
+    { label: "Radar", sub: "NEXRAD composite, refreshed every 5 min", on: showRadar, set: (on) => setLayer("showRadar", on) },
     { label: "Advisories", sub: "G-AIRMET, SIGMET, PIREP", on: showAdvisories, set: setShowAdvisories },
+    { label: "ADS-B traffic", sub: "From a GDL 90 receiver (Android app)", on: showTraffic, set: (on) => setLayer("showTraffic", on) },
     { label: "Glide range", sub: "No-wind ring while tracking or previewing", on: showGlide, set: (on) => setLayer("showGlide", on) },
   ];
   return (
@@ -372,23 +446,12 @@ export function LayerToggles() {
 /* Airport reference links                                             */
 /* ================================================================== */
 
-/** Current FAA 28-day procedures cycle, e.g. "2611". */
-export function dtppCycle(now = new Date()): string {
-  const ref = Date.UTC(2026, 9, 29, 9, 1); // cycle 2611
-  const day = 24 * 3600 * 1000;
-  const k = Math.floor((now.getTime() - ref) / (28 * day));
-  const eff = new Date(ref + k * 28 * day);
-  const start = Date.UTC(eff.getUTCFullYear(), 0, 1);
-  const doy = Math.floor((eff.getTime() - start) / day);
-  const n = Math.floor(doy / 28) + 1;
-  return `${String(eff.getUTCFullYear()).slice(2)}${String(n).padStart(2, "0")}`;
-}
-
 export function AirportLinks({ airport }: { airport: Airport }) {
   const ident = airport.icao.startsWith("K") && airport.icao.length === 4 ? airport.icao.slice(1) : (airport.lid ?? airport.icao);
+  const openPlates = useEfb((s) => s.setPlatesFor);
   const links = [
     {
-      label: "Diagram & plates",
+      label: "FAA d-TPP",
       href: `https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dtpp/search/results/?cycle=${dtppCycle()}&ident=${ident}`,
     },
     { label: "AirNav", href: `https://www.airnav.com/airport/${airport.icao}` },
@@ -397,6 +460,12 @@ export function AirportLinks({ airport }: { airport: Airport }) {
   ];
   return (
     <div className="mt-2 flex flex-wrap gap-1.5">
+      <button
+        onClick={() => openPlates(airport.icao)}
+        className="inline-flex h-7 items-center gap-1 rounded-full bg-amber-soft px-2.5 text-[0.6875rem] font-semibold text-amber ring-1 ring-amber/40 hover:brightness-110"
+      >
+        Plates & diagram
+      </button>
       {links.map((l) => (
         <a
           key={l.label}
@@ -608,5 +677,319 @@ export function TfrCard() {
         Open the NOTAM <ExternalLink className="size-3.5" />
       </a>
     </section>
+  );
+}
+
+/* ================================================================== */
+/* Base chart picker                                                   */
+/* ================================================================== */
+
+export function BaseChartPicker() {
+  const base = useEfb((s) => s.baseChart);
+  const set = useEfb((s) => s.setBaseChart);
+  return (
+    <div className="grid grid-cols-4 gap-1 rounded-[0.75rem] border border-line bg-bg p-1" role="radiogroup" aria-label="Chart">
+      {BASE_CHARTS.map((c) => {
+        const on = c.id === base;
+        return (
+          <button
+            key={c.id}
+            role="radio"
+            aria-checked={on}
+            title={c.label}
+            onClick={() => set(c.id)}
+            className={cx(
+              "flex h-12 flex-col items-center justify-center rounded-[0.5rem] leading-tight transition-colors",
+              on ? "bg-raised text-fg ring-1 ring-line-strong" : "text-muted hover:text-fg",
+            )}
+          >
+            <span className={cx("font-mono text-xs font-bold", on && "text-amber")}>{c.short}</span>
+            <span className="text-[0.625rem]">{c.label.replace("Terminal area", "Terminal")}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* NOTAMs                                                              */
+/* ================================================================== */
+
+function NotamRow({ n }: { n: import("@/lib/efb/notams").Notam }) {
+  return (
+    <li className={cx("rounded-[0.625rem] border px-2.5 py-2", n.important ? "border-warn/50 bg-warn/10" : "border-line bg-bg")}>
+      <div className="flex items-center gap-2">
+        <span className={cx("font-mono text-[0.625rem] font-bold", n.important ? "text-warn" : "text-faint")}>{n.keyword}</span>
+        <span className="font-mono text-[0.625rem] text-faint">{n.number}</span>
+      </div>
+      <p className="mt-0.5 font-mono text-[0.6875rem] leading-relaxed break-words">{n.text}</p>
+    </li>
+  );
+}
+
+/** NOTAMs for a list of airports, important ones first. */
+export function NotamList({ icaos, compact }: { icaos: string[]; compact?: boolean }) {
+  const pack = useNotams(icaos);
+  const [open, setOpen] = useState(!compact);
+  if (!pack) return compact ? null : <p className="text-xs text-muted">Loading NOTAMs…</p>;
+  if (!pack.configured) {
+    return (
+      <p className={cx("text-xs text-muted", compact && "mt-2")}>
+        NOTAM text appears here once FAA API keys are set on the server.{" "}
+        <a className="underline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank" rel="noreferrer">
+          FAA NOTAM search
+        </a>
+      </p>
+    );
+  }
+  const all = icaos.flatMap((id) => pack.notams[id] ?? []);
+  const hot = all.filter((n) => n.important).length;
+  if (compact) {
+    return (
+      <div className="mt-2">
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className={cx(
+            "inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[0.6875rem] font-semibold ring-1",
+            hot ? "bg-warn/10 text-warn ring-warn/40" : "text-muted ring-line",
+          )}
+        >
+          NOTAMs · {all.length}
+          {hot ? ` · ${hot} closure/outage` : ""}
+        </button>
+        {open && (
+          <ul className="mt-2 flex max-h-56 flex-col gap-1.5 overflow-auto">
+            {all.map((n) => (
+              <NotamRow key={n.id} n={n} />
+            ))}
+            {all.length === 0 && <li className="text-xs text-muted">No NOTAMs on file.</li>}
+          </ul>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-3">
+      {pack.error && <p className="text-xs text-warn">Some NOTAMs did not load ({pack.error}). Use the official briefing.</p>}
+      {icaos.map((id) => {
+        const list = pack.notams[id] ?? [];
+        return (
+          <section key={id}>
+            <h4 className="mb-1.5 font-mono text-xs font-semibold text-amber">
+              {id} <span className="text-faint">· {list.length}</span>
+            </h4>
+            <ul className="flex flex-col gap-1.5">
+              {list.slice(0, 40).map((n) => (
+                <NotamRow key={n.id} n={n} />
+              ))}
+              {list.length === 0 && <li className="text-xs text-muted">No NOTAMs on file.</li>}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/* Encrypted sync                                                      */
+/* ================================================================== */
+
+export function SyncPanel() {
+  const code = useEfb((s) => s.syncKey);
+  const setCode = useEfb((s) => s.setSyncKey);
+  const status = useSyncStatus();
+  const [entry, setEntry] = useState("");
+  const [show, setShow] = useState(false);
+  const [err, setErr] = useState("");
+
+  return (
+    <section className="flex flex-col gap-2">
+      <SectionTitle>Sync across devices</SectionTitle>
+      {!code ? (
+        <>
+          <p className="text-xs text-faint">
+            One code links your phone, tablet, and PC. Data is encrypted on the device with that code before upload; the
+            server stores only ciphertext and cannot read it. Keep the code private.
+          </p>
+          <Btn
+            size="sm"
+            icon={<RefreshCcw className="size-3.5" />}
+            onClick={() => {
+              resetSyncRev();
+              setCode(newSyncCode());
+              setShow(true);
+            }}
+          >
+            Start syncing (new code)
+          </Btn>
+          <div className="flex gap-2">
+            <input
+              className="field font-mono uppercase"
+              placeholder="Enter a code from another device"
+              value={entry}
+              aria-label="Sync code"
+              onChange={(e) => {
+                setEntry(e.target.value);
+                setErr("");
+              }}
+            />
+            <Btn
+              size="sm"
+              className="h-11"
+              onClick={() => {
+                const c = normalizeCode(entry);
+                if (!c) {
+                  setErr("That code is not valid. It has 26 letters and numbers.");
+                  return;
+                }
+                resetSyncRev();
+                setCode(c);
+                setEntry("");
+              }}
+            >
+              Link
+            </Btn>
+          </div>
+          {err && <p className="text-xs text-bad">{err}</p>}
+        </>
+      ) : (
+        <Card className="flex flex-col gap-2 p-3">
+          <div className="flex items-center gap-2">
+            <span
+              className={cx(
+                "size-2 rounded-full",
+                status.state === "ok" ? "bg-good" : status.state === "error" ? "bg-bad" : "animate-pulse bg-warn",
+              )}
+            />
+            <span className="text-sm font-medium">
+              {status.state === "ok"
+                ? "Synced"
+                : status.state === "error"
+                  ? "Not synced"
+                  : status.state === "syncing"
+                    ? "Syncing…"
+                    : "Waiting"}
+            </span>
+            {status.lastSync && <span className="ml-auto font-mono text-[0.6875rem] text-faint">{status.lastSync.slice(11, 16)}Z</span>}
+          </div>
+          {status.message && <p className="text-xs text-bad">{status.message}</p>}
+          <div className="flex items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-md bg-bg px-2 py-1.5 font-mono text-xs">
+              {show ? code : code.replace(/[A-Z0-9]/g, "•")}
+            </code>
+            <Btn size="sm" variant="ghost" onClick={() => setShow((s) => !s)}>
+              {show ? "Hide" : "Show"}
+            </Btn>
+            <Btn size="sm" variant="ghost" onClick={() => void navigator.clipboard?.writeText(code)}>
+              Copy
+            </Btn>
+          </div>
+          <p className="text-[0.6875rem] text-faint">Enter this code on your other devices under Plan → Sync across devices.</p>
+          <Btn
+            size="sm"
+            variant="danger"
+            onClick={() => {
+              setCode("");
+              resetSyncRev();
+            }}
+          >
+            Stop syncing on this device
+          </Btn>
+        </Card>
+      )}
+    </section>
+  );
+}
+
+/* ================================================================== */
+/* Data sources and currency                                           */
+/* ================================================================== */
+
+export function DataSourcesSheet() {
+  const open = useLive((s) => s.dataOpen);
+  const setOpen = useLive((s) => s.setDataOpen);
+  const tfrs = useLive((s) => s.tfrs);
+  const winds = useLive((s) => s.winds);
+  const metars = useLive((s) => s.metars);
+  const online = useLive((s) => s.online);
+  const [sectional, setSectional] = useState("");
+  const [radar, setRadar] = useState("");
+  const [notams, setNotams] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    void fetch("/api/charts/status?south=39&west=-105&north=40&east=-104")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b: { effective?: string; expires?: string } | null) => setSectional(b?.effective ? `${b.effective} – ${b.expires}` : ""))
+      .catch(() => undefined);
+    void fetch(RADAR_META)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b: { meta?: { valid?: string } } | null) => setRadar(b?.meta?.valid ?? ""))
+      .catch(() => undefined);
+    void fetch("/api/notams?ids=")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b: { configured?: boolean } | null) => setNotams(b ? Boolean(b.configured) : null))
+      .catch(() => undefined);
+  }, [open]);
+
+  if (!open) return null;
+  const z = (iso: string | null | undefined) => (iso ? `${iso.slice(0, 10)} ${iso.slice(11, 16)}Z` : "—");
+  const rows: { name: string; source: string; status: string; ok: boolean | null }[] = [
+    { name: "VFR sectional", source: "FAA AIS GeoTIFF, 56-day cycle", status: sectional || "loading…", ok: sectional ? true : null },
+    { name: "Terminal area, IFR low/high", source: "FAA AIS chart tile service", status: "Current FAA edition", ok: true },
+    {
+      name: "Plates and diagrams",
+      source: "FAA d-TPP, 28-day cycle",
+      status: `Cycle ${dtppCycle()}`,
+      ok: true,
+    },
+    { name: "METAR / TAF", source: "aviationweather.gov", status: metars.fetchedAt ? `Map layer ${z(metars.fetchedAt)}` : "On demand", ok: true },
+    { name: "Advisories, PIREPs", source: "aviationweather.gov", status: "Every 5 min while shown", ok: true },
+    { name: "Winds aloft", source: "NWS FB forecast", status: winds.valid ? `Valid ${winds.valid}${winds.stale ? " (last copy)" : ""}` : "When forecast mode is on", ok: winds.valid ? !winds.stale : null },
+    { name: "TFRs", source: "tfr.faa.gov", status: tfrs.fetchedAt ? `${tfrs.tfrs.length} active · ${z(tfrs.fetchedAt)}${tfrs.stale ? " (last copy)" : ""}` : "loading…", ok: tfrs.fetchedAt ? !tfrs.stale : null },
+    { name: "Radar", source: "NWS NEXRAD via Iowa State Mesonet", status: radar ? `Valid ${z(radar)}` : "—", ok: radar ? true : null },
+    { name: "NOTAMs", source: "FAA NOTAM API", status: notams === null ? "—" : notams ? "Connected" : "Waiting for FAA API keys", ok: notams },
+    { name: "Airports", source: "Built into the app", status: "Update with app releases", ok: true },
+  ];
+  return (
+    <div className="absolute inset-0 z-50 flex animate-fade-in items-end justify-center bg-black/50 p-2 sm:items-center" role="dialog" aria-modal="true" aria-label="Data sources">
+      <div className="glass flex max-h-[90%] w-full max-w-xl animate-sheet-up flex-col overflow-hidden rounded-[1.25rem]">
+        <header className="flex items-center gap-3 border-b border-line px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold">Data sources and currency</h2>
+            <p className="text-xs text-muted">{online ? "Online" : "Offline: showing saved copies where available"}</p>
+          </div>
+          <IconBtn label="Close" onClick={() => setOpen(false)} className="text-muted">
+            <X className="size-5" />
+          </IconBtn>
+        </header>
+        <ul className="divide-y divide-line overflow-auto">
+          {rows.map((r) => (
+            <li key={r.name} className="flex items-start gap-3 px-4 py-2.5">
+              <span className={cx("mt-1.5 size-2 shrink-0 rounded-full", r.ok === true ? "bg-good" : r.ok === false ? "bg-warn" : "bg-faint")} />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">{r.name}</p>
+                <p className="text-xs text-faint">{r.source}</p>
+              </div>
+              <p className="max-w-[45%] text-right font-mono text-[0.6875rem] text-muted">{r.status}</p>
+            </li>
+          ))}
+        </ul>
+        <p className="border-t border-line px-4 py-2 text-[0.6875rem] text-faint">
+          CrossEFB is a planning aid, not a certified EFB. Confirm currency with official sources before flight.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function DataSourcesButton() {
+  const setOpen = useLive((s) => s.setDataOpen);
+  return (
+    <Btn size="sm" variant="secondary" className="mt-3 w-full" onClick={() => setOpen(true)}>
+      Data sources and currency
+    </Btn>
   );
 }

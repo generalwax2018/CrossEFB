@@ -13,6 +13,8 @@ type LiveState = {
   metars: MetarField;
   online: boolean;
   pickedTfr: string | null;
+  dataOpen: boolean;
+  setDataOpen: (open: boolean) => void;
   setPickedTfr: (id: string | null) => void;
   setTfrs: (t: TfrPack) => void;
   setWinds: (w: WindPack) => void;
@@ -26,6 +28,8 @@ export const useLive = create<LiveState>((set) => ({
   metars: { stations: [], fetchedAt: null },
   online: true,
   pickedTfr: null,
+  dataOpen: false,
+  setDataOpen: (dataOpen) => set({ dataOpen }),
   setPickedTfr: (pickedTfr) => set({ pickedTfr }),
   setTfrs: (tfrs) => set({ tfrs }),
   setWinds: (winds) => set({ winds }),

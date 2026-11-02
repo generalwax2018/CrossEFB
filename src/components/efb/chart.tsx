@@ -6,6 +6,8 @@ import { useEfb } from "@/lib/efb/store";
 import { useTrack } from "@/lib/efb/track";
 import { useWeather } from "@/lib/efb/use-weather";
 import { useLive } from "@/lib/efb/live-store";
+import { useAdsb } from "@/lib/efb/adsb";
+import { FAA_LAYERS, RADAR_LAYER, RADAR_META, layerTiles } from "@/lib/efb/layers";
 import { ringContains as tfrContains, type MetarField } from "@/lib/efb/live";
 import type { WxAdvisories, WxArea } from "@/lib/efb/advisories";
 import type { Airport } from "@/lib/efb/types";
@@ -318,13 +320,48 @@ export function Chart() {
     };
   }, [streets]);
 
+  const baseChart = useEfb((s) => s.baseChart);
+  const showRadar = useEfb((s) => s.showRadar);
+  const faaLayer = baseChart === "sectional" ? null : FAA_LAYERS[baseChart];
+  const faaTiles = useMemo(
+    () => (faaLayer ? layerTiles(faaLayer, lat, lon, size.w, size.h, pxPerNm) : []),
+    [faaLayer, lat, lon, size.w, size.h, pxPerNm],
+  );
+  const radarTiles = useMemo(
+    () => (showRadar ? layerTiles(RADAR_LAYER, lat, lon, size.w, size.h, pxPerNm, 36) : []),
+    [showRadar, lat, lon, size.w, size.h, pxPerNm],
+  );
+  // Radar tiles refresh every five minutes; the stamp busts the browser cache.
+  const [radarStamp, setRadarStamp] = useState<{ key: number; valid: string }>({ key: 0, valid: "" });
+  useEffect(() => {
+    if (!showRadar) return;
+    let cancel = false;
+    const pull = () => {
+      void fetch(RADAR_META)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((b: { meta?: { valid?: string } } | null) => {
+          if (!cancel) setRadarStamp({ key: Math.floor(Date.now() / 300000), valid: b?.meta?.valid ?? "" });
+        })
+        .catch(() => {
+          if (!cancel) setRadarStamp((p) => ({ ...p, key: Math.floor(Date.now() / 300000) }));
+        });
+    };
+    pull();
+    const id = setInterval(pull, 5 * 60 * 1000);
+    return () => {
+      cancel = true;
+      clearInterval(id);
+    };
+  }, [showRadar]);
+
   const chartTiles = useMemo(
     () =>
-      sectionalTiles(lat, lon, size.w, size.h, pxPerNm).filter((tile) => {
+      // TAC sits on top of the sectional, so keep drawing it underneath.
+      (baseChart === "sectional" || baseChart === "tac" ? sectionalTiles(lat, lon, size.w, size.h, pxPerNm) : []).filter((tile) => {
         const center = tileCenter(tile.z, tile.x, tile.y);
         return sheets.some((sheet) => containsBox(sheet, center.lat, center.lon));
       }),
-    [lat, lon, size.w, size.h, pxPerNm, sheets],
+    [lat, lon, size.w, size.h, pxPerNm, sheets, baseChart],
   );
 
   useLayoutEffect(() => {
@@ -434,6 +471,14 @@ export function Chart() {
       : null;
   const shipPt = ship ? toXY(ship.lat, ship.lon) : null;
   const accuracyPx = live && live.accuracyM < 5000 ? (live.accuracyM / 1852) * pxPerNm : 0;
+
+  // ADS-B traffic.
+  const showTraffic = useEfb((s) => s.showTraffic);
+  const adsbTargets = useAdsb((s) => s.targets);
+  const adsbOwn = useAdsb((s) => s.ownship);
+  const adsbConnected = useAdsb((s) => s.connected);
+  const ownAlt = adsbOwn?.altFt ?? (live?.altFt != null ? live.altFt : null);
+  const ownPos = live ? { lat: live.lat, lon: live.lon } : adsbOwn ? { lat: adsbOwn.lat, lon: adsbOwn.lon } : null;
 
   // No-wind glide range: height above the nearest field times the glide ratio.
   const glideRatio = useEfb((s) => s.aircraft.glide ?? 9);
@@ -655,6 +700,53 @@ export function Chart() {
             );
           })}
         </g>
+        {faaLayer && (
+          <g
+            pointerEvents="none"
+            className={faaLayer.paper === "ifr" ? "ifr-tiles" : "sectional-tiles"}
+            transform={`matrix(${streetScale} 0 0 ${streetScale} ${streetTx} ${streetTy})`}
+          >
+            {faaTiles.map((tile) => {
+              const n = 2 ** tile.z;
+              const s = STREET_U / n;
+              return (
+                <image
+                  key={`${faaLayer.id}/${tile.z}/${tile.x}/${tile.y}`}
+                  href={faaLayer.url(tile.z, tile.x, tile.y)}
+                  x={(tile.x / n) * STREET_U}
+                  y={(tile.y / n) * STREET_U}
+                  width={s}
+                  height={s}
+                  preserveAspectRatio="none"
+                />
+              );
+            })}
+          </g>
+        )}
+        {showRadar && (
+          <g
+            pointerEvents="none"
+            className="radar-tiles"
+            opacity={0.7}
+            transform={`matrix(${streetScale} 0 0 ${streetScale} ${streetTx} ${streetTy})`}
+          >
+            {radarTiles.map((tile) => {
+              const n = 2 ** tile.z;
+              const s = STREET_U / n;
+              return (
+                <image
+                  key={`radar/${tile.z}/${tile.x}/${tile.y}/${radarStamp.key}`}
+                  href={`${RADAR_LAYER.url(tile.z, tile.x, tile.y)}?t=${radarStamp.key}`}
+                  x={(tile.x / n) * STREET_U}
+                  y={(tile.y / n) * STREET_U}
+                  width={s}
+                  height={s}
+                  preserveAspectRatio="none"
+                />
+              );
+            })}
+          </g>
+        )}
         {lats.map((glat) => {
           const y = toXY(glat, lon).y;
           return (
@@ -956,6 +1048,63 @@ export function Chart() {
           );
         })}
 
+        {showTraffic && (
+          <g data-traffic="1" pointerEvents="none">
+            {Object.values(adsbTargets).map((t) => {
+              const p = toXY(t.lat, t.lon);
+              if (p.x < -30 || p.y < -30 || p.x > w + 30 || p.y > h + 30) return null;
+              const rel = ownAlt != null && t.altFt != null ? Math.round((t.altFt - ownAlt) / 100) : null;
+              const nm = ownPos ? Math.hypot((t.lat - ownPos.lat) * 60, (t.lon - ownPos.lon) * 60 * Math.cos((t.lat * Math.PI) / 180)) : 99;
+              const threat = t.alert || (nm < 2 && rel != null && Math.abs(rel) <= 10);
+              const near = nm < 6 && rel != null && Math.abs(rel) <= 30;
+              const color = threat ? "var(--color-bad)" : near ? "var(--color-warn)" : "var(--color-cyan)";
+              const stale = Date.now() - t.seen > 10000;
+              const altText =
+                rel != null ? `${rel >= 0 ? "+" : "−"}${String(Math.abs(rel)).padStart(2, "0")}` : t.altFt != null ? String(Math.round(t.altFt / 100)).padStart(3, "0") : "";
+              const vs = t.vsFpm != null && Math.abs(t.vsFpm) >= 500 ? (t.vsFpm > 0 ? "↑" : "↓") : "";
+              return (
+                <g key={t.address} transform={`translate(${p.x} ${p.y})`} opacity={stale ? 0.45 : 1}>
+                  {t.track != null ? (
+                    <g transform={`rotate(${t.track})`}>
+                      <path d="M0,-10 L7,8 L0,4 L-7,8 Z" fill={color} stroke="var(--chart-paper)" strokeWidth={1.5} strokeLinejoin="round" />
+                    </g>
+                  ) : (
+                    <path d="M0,-8 L8,0 L0,8 L-8,0 Z" fill={color} stroke="var(--chart-paper)" strokeWidth={1.5} />
+                  )}
+                  <text
+                    x={11}
+                    y={-4}
+                    fill={color}
+                    stroke="var(--chart-paper)"
+                    strokeWidth={3}
+                    paintOrder="stroke"
+                    fontSize={11}
+                    fontWeight={700}
+                    fontFamily="IBM Plex Mono, ui-monospace, monospace"
+                  >
+                    {altText}
+                    {vs}
+                  </text>
+                  {pxPerNm > 3 && t.callsign && (
+                    <text
+                      x={11}
+                      y={9}
+                      fill={color}
+                      stroke="var(--chart-paper)"
+                      strokeWidth={3}
+                      paintOrder="stroke"
+                      fontSize={10}
+                      fontFamily="IBM Plex Mono, ui-monospace, monospace"
+                    >
+                      {t.callsign}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        )}
+
         {glide && shipPt && (
           <g pointerEvents="none">
             <circle
@@ -1020,9 +1169,21 @@ export function Chart() {
         </text>
       </svg>
       <div className="pointer-events-none absolute top-3 left-3 z-10 flex max-w-[calc(100%-5.5rem)] flex-col items-start gap-1.5">
-        <StatusChip tone={chartTiles.length ? "ok" : "wait"}>
-          {cycle ? `Sectional ${cycle}` : "Loading FAA sectional"}
-        </StatusChip>
+        {faaLayer ? (
+          <StatusChip tone={faaTiles.length ? "ok" : "wait"}>{`FAA ${faaLayer.label} · current edition`}</StatusChip>
+        ) : (
+          <StatusChip tone={chartTiles.length ? "ok" : "wait"}>
+            {cycle ? `Sectional ${cycle}` : "Loading FAA sectional"}
+          </StatusChip>
+        )}
+        {adsbConnected && (
+          <StatusChip tone="ok">{`ADS-B · ${Object.keys(adsbTargets).length} traffic${adsbOwn ? " · own GPS" : ""}`}</StatusChip>
+        )}
+        {showRadar && (
+          <StatusChip tone={radarStamp.valid ? "ok" : "wait"}>
+            {radarStamp.valid ? `Radar ${clockZ(radarStamp.valid)}` : "Loading radar"}
+          </StatusChip>
+        )}
         {showAdvisories && (
           <StatusChip tone={wx?.fetchedAt ? (wx.stale ? "wait" : "ok") : "wait"}>
             {wx?.fetchedAt
@@ -1038,7 +1199,7 @@ export function Chart() {
             {`${tfrs.tfrs.filter((t) => t.rings.some((ring) => ringHits(ring, viewSouth, viewWest, viewNorth, viewEast))).length} TFR in view · ${tfrs.tfrs.length} US`}
           </StatusChip>
         )}
-        {!chartTiles.length && (
+        {!chartTiles.length && !faaLayer && (
           <span className="pointer-events-auto rounded-full px-2 text-[0.625rem] text-[var(--chart-dim)]">
             ©{" "}
             <a className="underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">

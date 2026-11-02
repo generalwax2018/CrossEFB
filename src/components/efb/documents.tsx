@@ -20,7 +20,8 @@ import { useLegs, useLive } from "@/lib/efb/live-store";
 import { tfrsOnRoute } from "@/lib/efb/live";
 import { currency, goNoGo, logbookCsv } from "@/lib/efb/brief";
 import { favoredRunway } from "@/lib/efb/docs";
-import { download } from "./extras";
+import { download, NotamList } from "./extras";
+import { useNotams } from "@/lib/efb/use-notams";
 import { Btn, CatBadge, catColor, cx, NumField, Readout, Toggle } from "./ui";
 import {
   BookOpen,
@@ -422,11 +423,11 @@ function BriefSheet() {
           </section>
         );
       })}
-      <section className="rounded-[0.75rem] border border-warn/40 bg-warn/10 p-3 text-sm">
-        <h3 className="font-semibold text-warn">NOTAMs and TFRs</h3>
-        <p className="mt-1 text-muted">
-          This build does not pull NOTAMs. Read the official briefing for {f.route.join(", ") || "the route"} before
-          you go.
+      <section className="rounded-[0.75rem] border border-line p-3 text-sm">
+        <h3 className="mb-2 font-semibold">NOTAMs</h3>
+        <NotamList icaos={f.route} />
+        <p className="mt-2 text-xs text-muted">
+          Check TFRs and the official briefing for {f.route.join(", ") || "the route"} before you go.
         </p>
       </section>
       <section className="text-sm">
@@ -851,6 +852,12 @@ function GoNoGoCard() {
   const fav = f.origin && f.metar ? favoredRunway(f.origin.rwy, f.metar.wdir, f.metar.wspd) : null;
   const xw = fav && !fav.calm ? Math.abs(fav.cross) : f.metar ? 0 : f.perf.cross;
   const reserveGal = (f.aircraft.burnGph * (f.night ? 45 : 30)) / 60;
+  const notams = useNotams(f.route);
+  const closures = notams?.configured
+    ? [f.origin?.icao, f.dest?.icao]
+        .filter((id): id is string => Boolean(id))
+        .flatMap((id) => (notams.notams[id] ?? []).filter((n) => n.important && (n.keyword === "RWY" || n.keyword === "AD")).map((n) => `${id}: ${n.text.replace(/^!\S+\s+\S+\s+\S+\s+/, "")}`))
+    : [];
   const pax = Object.entries(f.loads).some(([id, lb]) => id !== "pilot" && id !== "bags" && lb > 0);
   const result = goNoGo({
     originId: f.origin?.icao ?? null,
@@ -871,6 +878,8 @@ function GoNoGoCard() {
     tfrIds: hits.map((t) => t.id),
     currency: currency(logbook, pilot),
     passengers: pax,
+    notamAlerts: closures,
+    notamsChecked: Boolean(notams?.configured),
   });
   const tone =
     result.verdict === "nogo" ? "border-bad/50 bg-bad/10 text-bad" : result.verdict === "caution" ? "border-warn/50 bg-warn/10 text-warn" : "border-good/50 bg-good/10 text-good";

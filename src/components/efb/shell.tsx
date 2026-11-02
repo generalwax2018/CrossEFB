@@ -16,8 +16,11 @@ import {
 } from "./panels";
 import { Chart } from "./chart";
 import { DocumentDesk } from "./documents";
-import { NearestSheet, TfrCard } from "./extras";
+import { DataSourcesSheet, NearestSheet, TfrCard } from "./extras";
+import { PlatesSheet } from "./plates-viewer";
 import { LiveFeeds, useLive } from "@/lib/efb/live-store";
+import { AdsbFeed } from "@/lib/efb/adsb";
+import { SyncEngine } from "@/lib/efb/sync-engine";
 import { OwnShip } from "./ownship";
 import { useEfb } from "@/lib/efb/store";
 
@@ -81,6 +84,8 @@ export function Shell() {
     <main className="relative flex h-dvh flex-col overflow-hidden bg-bg text-fg">
       <OwnShip />
       <LiveFeeds />
+      <AdsbFeed />
+      <SyncEngine />
       <header className="z-30 flex h-14 shrink-0 items-center gap-2 border-b border-line bg-bg px-3 sm:gap-3">
         <BrandMark />
         <SearchBox />
@@ -129,6 +134,8 @@ export function Shell() {
 
       {!desktop && <MobileTabs />}
       <NearestSheet />
+      <PlatesSheet />
+      <DataSourcesSheet />
     </main>
   );
 }

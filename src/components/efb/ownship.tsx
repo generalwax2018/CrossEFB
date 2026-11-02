@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { haversineNm, trueCourse } from "@/lib/efb/nav";
 import { useEfb } from "@/lib/efb/store";
 import { useTrack, type GpsFix } from "@/lib/efb/track";
+import { useAdsb } from "@/lib/efb/adsb";
 
 function courseFrom(prev: GpsFix, lat: number, lon: number): number | null {
   if (haversineNm(prev, { lat, lon }) < 0.008) return prev.track;
@@ -47,6 +48,11 @@ export function OwnShip() {
       },
       (err) => {
         if (err.code === err.PERMISSION_DENIED) {
+          // With an ADS-B receiver connected, keep tracking on its GPS.
+          if (useAdsb.getState().connected) {
+            useTrack.getState().setError("");
+            return;
+          }
           useTrack.getState().setTracking(false);
           useTrack.getState().setError("GPS blocked");
           return;

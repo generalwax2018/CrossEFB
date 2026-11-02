@@ -1,0 +1,13 @@
+{
+  "appId": "app.crossefb",
+  "appName": "CrossEFB",
+  "webDir": "www",
+  "server": {
+    "url": "https://garden-lake-flame-iris.grok.me",
+    "androidScheme": "https",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

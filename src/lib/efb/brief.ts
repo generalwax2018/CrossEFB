@@ -117,6 +117,9 @@ export function goNoGo(input: {
   tfrIds: string[];
   currency: CurrencyItem[];
   passengers: boolean;
+  /** Runway/aerodrome closures from NOTAMs at departure and destination. */
+  notamAlerts?: string[];
+  notamsChecked?: boolean;
 }): { verdict: Verdict; items: BriefItem[]; headline: string } {
   const items: BriefItem[] = [];
   const cat = (c: string | null, where: string, id: string | null) => {
@@ -164,6 +167,8 @@ export function goNoGo(input: {
       items.push({ level: "nogo", text: `Not ${input.night ? "night" : "day"} current to carry passengers (${need.detail}).` });
   }
   if (input.night) items.push({ level: "caution", text: "Departure is after civil twilight." });
+  for (const a of (input.notamAlerts ?? []).slice(0, 4)) items.push({ level: "caution", text: `NOTAM ${a.slice(0, 140)}` });
+  if (!input.notamsChecked) items.push({ level: "caution", text: "NOTAMs not checked here. Read them in the official briefing." });
 
   const verdict: Verdict = items.some((i) => i.level === "nogo") ? "nogo" : items.some((i) => i.level === "caution") ? "caution" : "go";
   const order: Record<Verdict, number> = { nogo: 0, caution: 1, go: 2 };

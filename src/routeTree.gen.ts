@@ -10,16 +10,25 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiNotamsRouteImport } from './routes/api/notams'
 import { Route as ApiAirspaceTfrsRouteImport } from './routes/api/airspace/tfrs'
 import { Route as ApiChartsStatusRouteImport } from './routes/api/charts/status'
+import { Route as ApiPlatesIdentRouteImport } from './routes/api/plates/$ident'
+import { Route as ApiSyncIdRouteImport } from './routes/api/sync/$id'
 import { Route as ApiWxAdvisoriesRouteImport } from './routes/api/wx/advisories'
 import { Route as ApiWxMetarsRouteImport } from './routes/api/wx/metars'
 import { Route as ApiWxWindsRouteImport } from './routes/api/wx/winds'
+import { Route as ApiPlatesPdfCycleFileRouteImport } from './routes/api/plates/pdf/$cycle.$file'
 import { Route as ApiChartsTileZXYRouteImport } from './routes/api/charts/tile/$z/$x/$y'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiNotamsRoute = ApiNotamsRouteImport.update({
+  id: '/api/notams',
+  path: '/api/notams',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAirspaceTfrsRoute = ApiAirspaceTfrsRouteImport.update({
@@ -30,6 +39,16 @@ const ApiAirspaceTfrsRoute = ApiAirspaceTfrsRouteImport.update({
 const ApiChartsStatusRoute = ApiChartsStatusRouteImport.update({
   id: '/api/charts/status',
   path: '/api/charts/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPlatesIdentRoute = ApiPlatesIdentRouteImport.update({
+  id: '/api/plates/$ident',
+  path: '/api/plates/$ident',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSyncIdRoute = ApiSyncIdRouteImport.update({
+  id: '/api/sync/$id',
+  path: '/api/sync/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiWxAdvisoriesRoute = ApiWxAdvisoriesRouteImport.update({
@@ -47,6 +66,11 @@ const ApiWxWindsRoute = ApiWxWindsRouteImport.update({
   path: '/api/wx/winds',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPlatesPdfCycleFileRoute = ApiPlatesPdfCycleFileRouteImport.update({
+  id: '/api/plates/pdf/$cycle/$file',
+  path: '/api/plates/pdf/$cycle/$file',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiChartsTileZXYRoute = ApiChartsTileZXYRouteImport.update({
   id: '/api/charts/tile/$z/$x/$y',
   path: '/api/charts/tile/$z/$x/$y',
@@ -55,69 +79,97 @@ const ApiChartsTileZXYRoute = ApiChartsTileZXYRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/notams': typeof ApiNotamsRoute
   '/api/airspace/tfrs': typeof ApiAirspaceTfrsRoute
   '/api/charts/status': typeof ApiChartsStatusRoute
+  '/api/plates/$ident': typeof ApiPlatesIdentRoute
+  '/api/sync/$id': typeof ApiSyncIdRoute
   '/api/wx/advisories': typeof ApiWxAdvisoriesRoute
   '/api/wx/metars': typeof ApiWxMetarsRoute
   '/api/wx/winds': typeof ApiWxWindsRoute
+  '/api/plates/pdf/$cycle/$file': typeof ApiPlatesPdfCycleFileRoute
   '/api/charts/tile/$z/$x/$y': typeof ApiChartsTileZXYRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/notams': typeof ApiNotamsRoute
   '/api/airspace/tfrs': typeof ApiAirspaceTfrsRoute
   '/api/charts/status': typeof ApiChartsStatusRoute
+  '/api/plates/$ident': typeof ApiPlatesIdentRoute
+  '/api/sync/$id': typeof ApiSyncIdRoute
   '/api/wx/advisories': typeof ApiWxAdvisoriesRoute
   '/api/wx/metars': typeof ApiWxMetarsRoute
   '/api/wx/winds': typeof ApiWxWindsRoute
+  '/api/plates/pdf/$cycle/$file': typeof ApiPlatesPdfCycleFileRoute
   '/api/charts/tile/$z/$x/$y': typeof ApiChartsTileZXYRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/notams': typeof ApiNotamsRoute
   '/api/airspace/tfrs': typeof ApiAirspaceTfrsRoute
   '/api/charts/status': typeof ApiChartsStatusRoute
+  '/api/plates/$ident': typeof ApiPlatesIdentRoute
+  '/api/sync/$id': typeof ApiSyncIdRoute
   '/api/wx/advisories': typeof ApiWxAdvisoriesRoute
   '/api/wx/metars': typeof ApiWxMetarsRoute
   '/api/wx/winds': typeof ApiWxWindsRoute
+  '/api/plates/pdf/$cycle/$file': typeof ApiPlatesPdfCycleFileRoute
   '/api/charts/tile/$z/$x/$y': typeof ApiChartsTileZXYRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/api/notams'
     | '/api/airspace/tfrs'
     | '/api/charts/status'
+    | '/api/plates/$ident'
+    | '/api/sync/$id'
     | '/api/wx/advisories'
     | '/api/wx/metars'
     | '/api/wx/winds'
+    | '/api/plates/pdf/$cycle/$file'
     | '/api/charts/tile/$z/$x/$y'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/api/notams'
     | '/api/airspace/tfrs'
     | '/api/charts/status'
+    | '/api/plates/$ident'
+    | '/api/sync/$id'
     | '/api/wx/advisories'
     | '/api/wx/metars'
     | '/api/wx/winds'
+    | '/api/plates/pdf/$cycle/$file'
     | '/api/charts/tile/$z/$x/$y'
   id:
     | '__root__'
     | '/'
+    | '/api/notams'
     | '/api/airspace/tfrs'
     | '/api/charts/status'
+    | '/api/plates/$ident'
+    | '/api/sync/$id'
     | '/api/wx/advisories'
     | '/api/wx/metars'
     | '/api/wx/winds'
+    | '/api/plates/pdf/$cycle/$file'
     | '/api/charts/tile/$z/$x/$y'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiNotamsRoute: typeof ApiNotamsRoute
   ApiAirspaceTfrsRoute: typeof ApiAirspaceTfrsRoute
   ApiChartsStatusRoute: typeof ApiChartsStatusRoute
+  ApiPlatesIdentRoute: typeof ApiPlatesIdentRoute
+  ApiSyncIdRoute: typeof ApiSyncIdRoute
   ApiWxAdvisoriesRoute: typeof ApiWxAdvisoriesRoute
   ApiWxMetarsRoute: typeof ApiWxMetarsRoute
   ApiWxWindsRoute: typeof ApiWxWindsRoute
+  ApiPlatesPdfCycleFileRoute: typeof ApiPlatesPdfCycleFileRoute
   ApiChartsTileZXYRoute: typeof ApiChartsTileZXYRoute
 }
 
@@ -128,6 +180,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/notams': {
+      id: '/api/notams'
+      path: '/api/notams'
+      fullPath: '/api/notams'
+      preLoaderRoute: typeof ApiNotamsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/airspace/tfrs': {
@@ -142,6 +201,20 @@ declare module '@tanstack/react-router' {
       path: '/api/charts/status'
       fullPath: '/api/charts/status'
       preLoaderRoute: typeof ApiChartsStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/plates/$ident': {
+      id: '/api/plates/$ident'
+      path: '/api/plates/$ident'
+      fullPath: '/api/plates/$ident'
+      preLoaderRoute: typeof ApiPlatesIdentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/sync/$id': {
+      id: '/api/sync/$id'
+      path: '/api/sync/$id'
+      fullPath: '/api/sync/$id'
+      preLoaderRoute: typeof ApiSyncIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/wx/advisories': {
@@ -165,6 +238,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWxWindsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/plates/pdf/$cycle/$file': {
+      id: '/api/plates/pdf/$cycle/$file'
+      path: '/api/plates/pdf/$cycle/$file'
+      fullPath: '/api/plates/pdf/$cycle/$file'
+      preLoaderRoute: typeof ApiPlatesPdfCycleFileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/charts/tile/$z/$x/$y': {
       id: '/api/charts/tile/$z/$x/$y'
       path: '/api/charts/tile/$z/$x/$y'
@@ -177,11 +257,15 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiNotamsRoute: ApiNotamsRoute,
   ApiAirspaceTfrsRoute: ApiAirspaceTfrsRoute,
   ApiChartsStatusRoute: ApiChartsStatusRoute,
+  ApiPlatesIdentRoute: ApiPlatesIdentRoute,
+  ApiSyncIdRoute: ApiSyncIdRoute,
   ApiWxAdvisoriesRoute: ApiWxAdvisoriesRoute,
   ApiWxMetarsRoute: ApiWxMetarsRoute,
   ApiWxWindsRoute: ApiWxWindsRoute,
+  ApiPlatesPdfCycleFileRoute: ApiPlatesPdfCycleFileRoute,
   ApiChartsTileZXYRoute: ApiChartsTileZXYRoute,
 }
 export const routeTree = rootRouteImport
