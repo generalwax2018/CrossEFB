@@ -11,6 +11,7 @@ This is a **planning aid**, not a certified EFB. Do not use it as a sole source 
 - Airport search, origin, destination, stops, and direct-to
 - Wind, TAS, groundspeed, magnetic course, ETE, and fuel against usable
 - Live METAR and TAF from aviationweather.gov (no sample weather)
+- G-AIRMET, SIGMET, and recent PIREP overlay from the same National Weather Service feed. The chart reloads them every few minutes.
 - Aircraft profile, day and night chart, and a simulated route preview
 - Track: live own-ship from the device GPS, groundspeed, track, GPS altitude, and bearing to the next fix. The screen stays awake. Dragging the chart pauses follow. Already-viewed sectional tiles are kept for a dropped signal. This is not a certified navigation GPS.
 

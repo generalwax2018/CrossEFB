@@ -4,6 +4,7 @@ import { nearestAirports, positionAlong, routeDistance } from "@/lib/efb/nav";
 import { loadStreetTile, streetTileIds, type StreetGeom } from "@/lib/efb/streets";
 import { useEfb } from "@/lib/efb/store";
 import { useTrack } from "@/lib/efb/track";
+import type { WxAdvisories, WxArea } from "@/lib/efb/advisories";
 import type { Airport } from "@/lib/efb/types";
 import { containsBox, sectionalTiles, tileCenter, type ChartBox } from "@/lib/efb/web-mercator";
 
@@ -112,6 +113,59 @@ function shownOnChart(airport: Airport, pxPerNm: number, selected: boolean, onRo
   return selected || onRoute || pxPerNm > 4.5 || (pxPerNm > 1.7 && airport.cls !== "E") || airport.cls === "B";
 }
 
+function wxStroke(hazard: string): string {
+  const h = hazard.toUpperCase();
+  if (h.includes("ICE") || h.includes("FZ")) return "var(--chart-wx-ice)";
+  if (h.includes("TURB") || h === "LLWS" || h === "MTW") return "var(--chart-wx-turb)";
+  if (h.includes("WIND")) return "var(--chart-wx-wind)";
+  if (h === "IFR" || h.includes("OBSC")) return "var(--chart-wx-ifr)";
+  return "var(--chart-wx-sig)";
+}
+
+function ringHits(ring: [number, number][], south: number, west: number, north: number, east: number): boolean {
+  let minLat = 90;
+  let maxLat = -90;
+  let minLon = 180;
+  let maxLon = -180;
+  for (const [lon, lat] of ring) {
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+    if (lon < minLon) minLon = lon;
+    if (lon > maxLon) maxLon = lon;
+  }
+  return maxLat >= south && minLat <= north && maxLon >= west && minLon <= east;
+}
+
+function ringContains(ring: [number, number][], lat: number, lon: number): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0];
+    const yi = ring[i][1];
+    const xj = ring[j][0];
+    const yj = ring[j][1];
+    const hit = yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi + 0.0000001) + xi;
+    if (hit) inside = !inside;
+  }
+  return inside;
+}
+
+function overheadLabels(areas: WxArea[], lat: number, lon: number): string[] {
+  const labels: string[] = [];
+  for (const area of areas) {
+    if (area.line) continue;
+    if (!area.rings.some((ring) => ringContains(ring, lat, lon))) continue;
+    if (!labels.includes(area.label)) labels.push(area.label);
+    if (labels.length >= 4) break;
+  }
+  return labels;
+}
+
+function clockZ(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(11, 16) + "Z";
+}
+
 export function Chart() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -135,9 +189,11 @@ export function Chart() {
   const pinch = useRef<number | null>(null);
 
   const chartMode = useEfb((s) => s.chartMode);
+  const showAdvisories = useEfb((s) => s.showAdvisories);
   const [streets, setStreets] = useState<StreetGeom[]>([]);
   const [sheets, setSheets] = useState<ChartBox[]>([]);
   const [cycle, setCycle] = useState("");
+  const [wx, setWx] = useState<WxAdvisories | null>(null);
   useEffect(() => {
     document.documentElement.dataset.chart = chartMode;
   }, [chartMode]);
@@ -183,6 +239,30 @@ export function Chart() {
       clearInterval(id);
     };
   }, [viewKey, viewSouth, viewWest, viewNorth, viewEast]);
+
+  useEffect(() => {
+    if (!showAdvisories) return;
+    let cancel = false;
+    const pull = () => {
+      void fetch("/api/wx/advisories")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((body: WxAdvisories | null) => {
+          if (!cancel && body && Array.isArray(body.areas)) setWx(body);
+        })
+        .catch(() => undefined);
+    };
+    pull();
+    const id = setInterval(pull, 5 * 60 * 1000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") pull();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancel = true;
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [showAdvisories]);
 
   const streetDraw = useMemo(() => {
     const water: StreetGeom[] = [];
@@ -564,6 +644,79 @@ export function Chart() {
           ));
         })}
 
+        {showAdvisories && wx && (
+          <g data-wx="1" pointerEvents="none">
+            {wx.areas.map((area) => {
+              const visible = area.rings.some((ring) =>
+                ringHits(ring, viewSouth - 1, viewWest - 1, viewNorth + 1, viewEast + 1),
+              );
+              if (!visible) return null;
+              const color = wxStroke(area.hazard);
+              const d = area.rings
+                .map((ring) =>
+                  ring
+                    .map((pt, i) => {
+                      const p = toXY(pt[1], pt[0]);
+                      return `${i === 0 ? "M" : "L"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+                    })
+                    .join(" ") + (area.line ? "" : "Z"),
+                )
+                .join(" ");
+              const mid = area.rings[0][Math.floor(area.rings[0].length / 2)];
+              const labelAt = mid ? toXY(mid[1], mid[0]) : null;
+              const showLabel = Boolean(labelAt && labelAt.x > 8 && labelAt.y > 16 && labelAt.x < w - 8 && labelAt.y < h - 8);
+              return (
+                <g key={area.id}>
+                  <path
+                    d={d}
+                    fill={area.line ? "none" : color}
+                    fillOpacity={area.line ? 0 : 0.22}
+                    stroke={color}
+                    strokeWidth={area.hazard === "CONV" || area.hazard === "TS" ? 2.4 : 1.5}
+                    strokeDasharray={area.line ? "4 3" : undefined}
+                  >
+                    <title>{area.detail}</title>
+                  </path>
+                  {showLabel && pxPerNm > 2 && labelAt && (
+                    <text
+                      x={labelAt.x}
+                      y={labelAt.y}
+                      fill={color}
+                      fontSize={11}
+                      fontWeight={600}
+                      fontFamily="IBM Plex Mono, ui-monospace, monospace"
+                    >
+                      {area.label}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+            {wx.pireps.map((report) => {
+              if (report.lat < viewSouth || report.lat > viewNorth || report.lon < viewWest || report.lon > viewEast) {
+                return null;
+              }
+              const p = toXY(report.lat, report.lon);
+              return (
+                <g key={report.id}>
+                  <circle cx={p.x} cy={p.y} r={4} fill="var(--chart-wx-turb)" stroke="var(--chart-ink)" strokeWidth={1} />
+                  {pxPerNm > 6 && (
+                    <text
+                      x={p.x + 7}
+                      y={p.y + 4}
+                      fill="var(--chart-ink)"
+                      fontSize={10}
+                      fontFamily="IBM Plex Mono, ui-monospace, monospace"
+                    >
+                      {report.label}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        )}
+
         {routePts.length >= 2 && (
           <polyline
             points={routePts.map((p) => `${p.x},${p.y}`).join(" ")}
@@ -655,6 +808,16 @@ export function Chart() {
       <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-md bg-bg/80 px-2 py-1 text-xs text-muted">
         <div>Filled tower · Open CTAF</div>
         <div>{cycle ? `FAA sectional · ${cycle}` : "Loading FAA sectional"}</div>
+        <div>
+          {showAdvisories
+            ? wx?.fetchedAt
+              ? `NWS · ${clockZ(wx.fetchedAt)}${wx.stale ? " · last copy" : ""}${wx.valid ? ` · valid ${clockZ(wx.valid)}` : ""} · ${
+                  overheadLabels(wx.areas, tracking && fix ? fix.lat : lat, tracking && fix ? fix.lon : lon).join(" · ") ||
+                  "none overhead"
+                }`
+              : "Loading advisories"
+            : "Advisories hidden"}
+        </div>
         <div>
           {chartTiles.length ? (
             "Not a certified EFB. Check NOTAMs."

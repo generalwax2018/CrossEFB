@@ -138,6 +138,8 @@ export function ZuluClock() {
 export function ChartTools() {
   const mode = useEfb((s) => s.chartMode);
   const setMode = useEfb((s) => s.setChartMode);
+  const showAdvisories = useEfb((s) => s.showAdvisories);
+  const setShowAdvisories = useEfb((s) => s.setShowAdvisories);
   const setView = useEfb((s) => s.setView);
   const lat = useEfb((s) => s.lat);
   const lon = useEfb((s) => s.lon);
@@ -180,6 +182,13 @@ export function ChartTools() {
         onClick={() => setMode(mode === "night" ? "day" : "night")}
       >
         {mode === "night" ? <Sun className="size-5" /> : <Moon className="size-5" />}
+      </ToolButton>
+      <ToolButton
+        label={showAdvisories ? "Hide advisories" : "Show advisories"}
+        active={showAdvisories}
+        onClick={() => setShowAdvisories(!showAdvisories)}
+      >
+        <CloudSun className="size-5" />
       </ToolButton>
       <ToolButton
         label="Zoom in"
@@ -229,10 +238,12 @@ export function ChartTools() {
 function ToolButton({
   label,
   onClick,
+  active,
   children,
 }: {
   label: string;
   onClick: () => void;
+  active?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -240,7 +251,7 @@ function ToolButton({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="flex h-11 w-11 items-center justify-center rounded-md border border-line bg-bg/90 text-fg"
+      className={`flex h-11 w-11 items-center justify-center rounded-md border border-line bg-bg/90 ${active ? "text-amber" : "text-fg"}`}
     >
       {children}
     </button>

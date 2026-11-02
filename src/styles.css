@@ -26,6 +26,11 @@
   --chart-park: #1b3326;
   --chart-road: #6d8578;
   --chart-hwy: #b08948;
+  --chart-wx-ifr: #7f9cb8;
+  --chart-wx-turb: #e2a63b;
+  --chart-wx-ice: #7eb8b0;
+  --chart-wx-wind: #d2c07a;
+  --chart-wx-sig: #d4654a;
   color-scheme: dark;
 }
 
@@ -41,6 +46,11 @@
   --chart-park: #d5e0c8;
   --chart-road: #8a8172;
   --chart-hwy: #8d5a22;
+  --chart-wx-ifr: #2f5278;
+  --chart-wx-turb: #9a4e12;
+  --chart-wx-ice: #1f6f78;
+  --chart-wx-wind: #8a6a12;
+  --chart-wx-sig: #9c2f22;
 }
 
 @layer base {

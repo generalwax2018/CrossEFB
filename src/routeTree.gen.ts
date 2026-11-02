@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiChartsStatusRouteImport } from './routes/api/charts/status'
+import { Route as ApiWxAdvisoriesRouteImport } from './routes/api/wx/advisories'
 import { Route as ApiChartsTileZXYRouteImport } from './routes/api/charts/tile/$z/$x/$y'
 
 const IndexRoute = IndexRouteImport.update({
@@ -23,6 +24,11 @@ const ApiChartsStatusRoute = ApiChartsStatusRouteImport.update({
   path: '/api/charts/status',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWxAdvisoriesRoute = ApiWxAdvisoriesRouteImport.update({
+  id: '/api/wx/advisories',
+  path: '/api/wx/advisories',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiChartsTileZXYRoute = ApiChartsTileZXYRouteImport.update({
   id: '/api/charts/tile/$z/$x/$y',
   path: '/api/charts/tile/$z/$x/$y',
@@ -32,30 +38,47 @@ const ApiChartsTileZXYRoute = ApiChartsTileZXYRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/charts/status': typeof ApiChartsStatusRoute
+  '/api/wx/advisories': typeof ApiWxAdvisoriesRoute
   '/api/charts/tile/$z/$x/$y': typeof ApiChartsTileZXYRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/charts/status': typeof ApiChartsStatusRoute
+  '/api/wx/advisories': typeof ApiWxAdvisoriesRoute
   '/api/charts/tile/$z/$x/$y': typeof ApiChartsTileZXYRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/charts/status': typeof ApiChartsStatusRoute
+  '/api/wx/advisories': typeof ApiWxAdvisoriesRoute
   '/api/charts/tile/$z/$x/$y': typeof ApiChartsTileZXYRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/charts/status' | '/api/charts/tile/$z/$x/$y'
+  fullPaths:
+    | '/'
+    | '/api/charts/status'
+    | '/api/wx/advisories'
+    | '/api/charts/tile/$z/$x/$y'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/charts/status' | '/api/charts/tile/$z/$x/$y'
-  id: '__root__' | '/' | '/api/charts/status' | '/api/charts/tile/$z/$x/$y'
+  to:
+    | '/'
+    | '/api/charts/status'
+    | '/api/wx/advisories'
+    | '/api/charts/tile/$z/$x/$y'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/charts/status'
+    | '/api/wx/advisories'
+    | '/api/charts/tile/$z/$x/$y'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiChartsStatusRoute: typeof ApiChartsStatusRoute
+  ApiWxAdvisoriesRoute: typeof ApiWxAdvisoriesRoute
   ApiChartsTileZXYRoute: typeof ApiChartsTileZXYRoute
 }
 
@@ -75,6 +98,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChartsStatusRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/wx/advisories': {
+      id: '/api/wx/advisories'
+      path: '/api/wx/advisories'
+      fullPath: '/api/wx/advisories'
+      preLoaderRoute: typeof ApiWxAdvisoriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/charts/tile/$z/$x/$y': {
       id: '/api/charts/tile/$z/$x/$y'
       path: '/api/charts/tile/$z/$x/$y'
@@ -88,6 +118,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiChartsStatusRoute: ApiChartsStatusRoute,
+  ApiWxAdvisoriesRoute: ApiWxAdvisoriesRoute,
   ApiChartsTileZXYRoute: ApiChartsTileZXYRoute,
 }
 export const routeTree = rootRouteImport

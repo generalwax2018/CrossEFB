@@ -85,6 +85,7 @@ type EfbState = {
   windFrom: number;
   windKts: number;
   chartMode: ChartMode;
+  showAdvisories: boolean;
   flying: boolean;
   progressNm: number;
   lat: number;
@@ -117,6 +118,7 @@ type EfbState = {
   setFuelGal: (gal: number) => void;
   setWind: (from: number, kts: number) => void;
   setChartMode: (mode: ChartMode) => void;
+  setShowAdvisories: (show: boolean) => void;
   setView: (lat: number, lon: number, pxPerNm?: number) => void;
   setFlying: (flying: boolean) => void;
   setProgressNm: (nm: number) => void;
@@ -156,6 +158,7 @@ export const useEfb = create<EfbState>()(
       windFrom: 270,
       windKts: 12,
       chartMode: "night",
+      showAdvisories: true,
       flying: false,
       progressNm: 0,
       lat: 39.7,
@@ -254,6 +257,7 @@ export const useEfb = create<EfbState>()(
           windKts: clamp(windKts, 0, 120),
         }),
       setChartMode: (chartMode) => set({ chartMode }),
+      setShowAdvisories: (showAdvisories) => set({ showAdvisories }),
       setView: (lat, lon, pxPerNm) =>
         set((s) => ({
           lat,
