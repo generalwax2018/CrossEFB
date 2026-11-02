@@ -160,6 +160,49 @@ export function positionAlong(
   return { lat: last.lat, lon: last.lon, track: 0, legIndex: ids.length - 2, intoNm: 0 };
 }
 
+export function nextFix(
+  ids: string[],
+  here: LatLon,
+): { icao: string; nm: number; tc: number; mc: number } | null {
+  const pts = ids.map((id) => getAirport(id)).filter((a): a is Airport => Boolean(a));
+  if (!pts.length) return null;
+  const pack = (p: Airport) => {
+    const tc = trueCourse(here, p);
+    return { icao: p.icao, nm: haversineNm(here, p), tc, mc: magCourse(tc, p.varE) };
+  };
+  if (pts.length === 1) return pack(pts[0]);
+
+  let best: { i: number; cross: number; along: number; len: number } | null = null;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const len = Math.max(haversineNm(a, b), 0.01);
+    const ab = trueCourse(a, b);
+    const ah = haversineNm(a, here);
+    const delta = ((trueCourse(a, here) - ab) * Math.PI) / 180;
+    const along = ah * Math.cos(delta);
+    const cross = Math.abs(ah * Math.sin(delta));
+    if (along < -2 || along > len + 2) continue;
+    if (!best || cross < best.cross) best = { i, cross, along, len };
+  }
+  if (!best) {
+    let near = pts[0];
+    let dist = haversineNm(here, near);
+    for (const p of pts) {
+      const n = haversineNm(here, p);
+      if (n < dist) {
+        near = p;
+        dist = n;
+      }
+    }
+    const idx = pts.indexOf(near);
+    return pack(dist < 0.5 && idx < pts.length - 1 ? pts[idx + 1] : near);
+  }
+  const passed = best.along > best.len - 0.4;
+  const target = passed && best.i + 2 < pts.length ? pts[best.i + 2] : pts[best.i + 1];
+  return pack(target);
+}
+
 export function routeDistance(ids: string[]): number {
   let n = 0;
   for (let i = 0; i < ids.length - 1; i++) {

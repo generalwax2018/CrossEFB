@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { ActivePanel, AirportCard, ChartTools, InstrumentBar, SearchBox, SideNav, ZuluClock } from "./panels";
 import { Chart } from "./chart";
 import { DocumentDesk } from "./documents";
+import { OwnShip } from "./ownship";
 import { useEfb } from "@/lib/efb/store";
 
 export function Shell() {
@@ -15,10 +16,11 @@ export function Shell() {
 
   return (
     <main className="flex h-dvh flex-col bg-bg text-fg">
+      <OwnShip />
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line px-3">
         <div className="leading-none">
           <div className="text-sm font-semibold tracking-widest">CROSS EFB</div>
-          <div className="mt-1 hidden text-xs text-muted sm:block">Android · PC · planning aid</div>
+          <div className="mt-1 hidden text-xs text-muted sm:block">Android · PC</div>
         </div>
         <SearchBox />
         <div className="hidden sm:block">

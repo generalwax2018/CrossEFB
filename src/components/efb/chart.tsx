@@ -3,6 +3,7 @@ import { airportsNear, getAirport, ringsNm } from "@/lib/efb/airports";
 import { nearestAirports, positionAlong, routeDistance } from "@/lib/efb/nav";
 import { loadStreetTile, streetTileIds, type StreetGeom } from "@/lib/efb/streets";
 import { useEfb } from "@/lib/efb/store";
+import { useTrack } from "@/lib/efb/track";
 import type { Airport } from "@/lib/efb/types";
 import { containsBox, sectionalTiles, tileCenter, type ChartBox } from "@/lib/efb/web-mercator";
 
@@ -310,8 +311,16 @@ export function Chart() {
     .filter((a): a is Airport => Boolean(a))
     .map((a) => toXY(a.lat, a.lon));
 
-  const ship = route.length ? positionAlong(route, progressNm) : null;
-  const shipPt = ship && route.length >= 2 ? toXY(ship.lat, ship.lon) : null;
+  const tracking = useTrack((s) => s.tracking);
+  const fix = useTrack((s) => s.fix);
+  const live = tracking && fix ? fix : null;
+  const ship = live
+    ? { lat: live.lat, lon: live.lon, track: live.track }
+    : route.length
+      ? positionAlong(route, progressNm)
+      : null;
+  const shipPt = ship ? toXY(ship.lat, ship.lon) : null;
+  const accuracyPx = live && live.accuracyM < 5000 ? (live.accuracyM / 1852) * pxPerNm : 0;
 
   const scaleNm = pxPerNm > 8 ? 5 : pxPerNm > 2 ? 10 : 30;
   const scalePx = scaleNm * pxPerNm;
@@ -420,7 +429,10 @@ export function Chart() {
           if (!d || d.id !== e.pointerId) return;
           const dx = x - d.x;
           const dy = y - d.y;
-          if (Math.hypot(dx, dy) > 5) d.moved = true;
+          if (Math.hypot(dx, dy) > 5) {
+            d.moved = true;
+            if (useTrack.getState().tracking) useTrack.getState().setFollow(false);
+          }
           const s = useEfb.getState();
           const world = TILE * 2 ** mapZoom(s.pxPerNm, d.lat);
           const cy = mercY(d.lat) - dy / world;
@@ -610,8 +622,17 @@ export function Chart() {
         })}
 
         {ship && shipPt && (
-          <g transform={`translate(${shipPt.x} ${shipPt.y}) rotate(${ship.track})`}>
-            <polygon points="0,-12 7,10 0,5 -7,10" fill="var(--chart-own)" stroke="var(--chart-route)" strokeWidth={1} />
+          <g transform={`translate(${shipPt.x} ${shipPt.y})`}>
+            {accuracyPx > 4 && (
+              <circle r={accuracyPx} fill="none" stroke="var(--chart-own)" strokeWidth={1} strokeDasharray="3 3" />
+            )}
+            {ship.track == null ? (
+              <circle r={6} fill="var(--chart-own)" stroke="var(--chart-route)" strokeWidth={1.5} />
+            ) : (
+              <g transform={`rotate(${ship.track})`}>
+                <polygon points="0,-12 7,10 0,5 -7,10" fill="var(--chart-own)" stroke="var(--chart-route)" strokeWidth={1} />
+              </g>
+            )}
           </g>
         )}
 

@@ -11,7 +11,8 @@ This is a **planning aid**, not a certified EFB. Do not use it as a sole source 
 - Airport search, origin, destination, stops, and direct-to
 - Wind, TAS, groundspeed, magnetic course, ETE, and fuel against usable
 - Live METAR and TAF from aviationweather.gov (no sample weather)
-- Aircraft profile, day and night chart, geolocation, and a simulated fly-along
+- Aircraft profile, day and night chart, and a simulated route preview
+- Track: live own-ship from the device GPS, groundspeed, track, GPS altitude, and bearing to the next fix. The screen stays awake. Dragging the chart pauses follow. Already-viewed sectional tiles are kept for a dropped signal. This is not a certified navigation GPS.
 
 The shared navigation math lives in `src/lib/efb`. A native Android or desktop shell can call the same functions later. This repository is the web client.
 

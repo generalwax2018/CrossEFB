@@ -19,8 +19,9 @@ import {
 } from "lucide-react";
 import { getAirport, PRESETS, searchAirports } from "@/lib/efb/airports";
 import { favoredRunway } from "@/lib/efb/docs";
-import { buildLegs, fmtGal, fmtMin, fmtNm, hdgText, nearestAirports, routeDistance, totals } from "@/lib/efb/nav";
+import { buildLegs, fmtGal, fmtMin, fmtNm, hdgText, nearestAirports, nextFix, routeDistance, totals } from "@/lib/efb/nav";
 import { useEfb } from "@/lib/efb/store";
+import { useTrack } from "@/lib/efb/track";
 import { fmtClock, isLocalNight, sunClock } from "@/lib/efb/sun";
 import type { Tab, WxBundle } from "@/lib/efb/types";
 import { fetchWeather } from "@/lib/efb/weather";
@@ -642,18 +643,17 @@ export function InstrumentBar() {
   const flying = useEfb((s) => s.flying);
   const setFlying = useEfb((s) => s.setFlying);
   const setProgress = useEfb((s) => s.setProgressNm);
+  const tracking = useTrack((s) => s.tracking);
+  const follow = useTrack((s) => s.follow);
+  const fix = useTrack((s) => s.fix);
+  const gpsError = useTrack((s) => s.error);
+  const setTracking = useTrack((s) => s.setTracking);
+  const setFollow = useTrack((s) => s.setFollow);
   const legs = buildLegs(route, aircraft, windFrom, windKts);
   const sum = totals(legs);
   const totalNm = routeDistance(route);
   const remain = Math.max(0, totalNm - progressNm);
-
-  if (route.length < 2) {
-    return (
-      <div className="flex h-12 items-center px-3 text-xs text-muted">
-        Drag the chart. Tap an airport to start a route.
-      </div>
-    );
-  }
+  const upcoming = tracking && fix ? nextFix(route, fix) : null;
 
   const leg = legs.find((_, i) => {
     let acc = 0;
@@ -662,32 +662,77 @@ export function InstrumentBar() {
   }) ?? legs[legs.length - 1];
 
   return (
-    <div className="flex h-12 items-center gap-3 px-3">
+    <div className="flex items-center gap-3 px-3 py-2">
       <button
-        aria-label={flying ? "Pause" : "Fly route"}
-        className="flex h-9 w-9 items-center justify-center rounded-md bg-amber text-ink"
+        aria-label={tracking ? "Stop GPS" : "Track my position"}
+        className="flex h-11 shrink-0 items-center gap-1 rounded-md bg-amber px-3 text-sm font-medium text-ink"
         onClick={() => {
-          if (flying) {
-            setFlying(false);
+          if (tracking) {
+            setTracking(false);
             return;
           }
-          if (progressNm >= totalNm - 0.2) setProgress(0);
-          setFlying(true);
+          setFlying(false);
+          setTracking(true);
         }}
       >
-        {flying ? <Pause className="size-4" /> : <Play className="size-4" />}
+        <LocateFixed className="size-4" />
+        {tracking ? "Stop" : "Track"}
       </button>
-      <p className="min-w-0 flex-1 truncate font-mono text-xs sm:text-sm">
-        {leg ? `${leg.from.replace(/^K/, "")}→${leg.to.replace(/^K/, "")} MC ${hdgText(leg.mc)}` : ""}
-        {" · "}
-        {fmtNm(remain)} NM left
-        {" · "}
-        GS {leg && leg.gs >= 1 ? Math.round(leg.gs) : "—"}
-        {" · "}
-        {fmtGal(sum.gal)} gal
-        {" · "}
-        {aircraft.cruiseFt.toLocaleString()} ft
-      </p>
+      {tracking ? (
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-mono text-xs sm:text-sm">
+            GS {fix?.gsKt != null ? Math.round(fix.gsKt) : "—"}
+            {" · TRK "}
+            {fix?.track != null ? hdgText(fix.track) : "—"}
+            {fix?.altFt != null ? ` · GPS ${Math.round(fix.altFt).toLocaleString()} ft` : ""}
+          </p>
+          <p className="truncate text-xs text-muted">
+            {gpsError
+              ? gpsError
+              : upcoming
+                ? `${upcoming.icao} ${fmtNm(upcoming.nm)} NM · ${hdgText(upcoming.mc)}`
+                : fix
+                  ? "On the chart"
+                  : "Waiting for GPS"}
+            {fix ? ` · ±${Math.round(fix.accuracyM)} m` : ""}
+            {" · not a navigation GPS"}
+          </p>
+        </div>
+      ) : route.length >= 2 ? (
+        <>
+          <button
+            aria-label={flying ? "Pause" : "Preview the route"}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-line"
+            onClick={() => {
+              if (flying) {
+                setFlying(false);
+                return;
+              }
+              if (progressNm >= totalNm - 0.2) setProgress(0);
+              setFlying(true);
+            }}
+          >
+            {flying ? <Pause className="size-4" /> : <Play className="size-4" />}
+          </button>
+          <p className="min-w-0 flex-1 truncate font-mono text-xs sm:text-sm">
+            {leg ? `${leg.from.replace(/^K/, "")}→${leg.to.replace(/^K/, "")} MC ${hdgText(leg.mc)}` : ""}
+            {" · "}
+            {fmtNm(remain)} NM left
+            {" · "}
+            GS {leg && leg.gs >= 1 ? Math.round(leg.gs) : "—"}
+            {" · "}
+            {fmtGal(sum.gal)} gal
+            {gpsError ? ` · ${gpsError}` : ""}
+          </p>
+        </>
+      ) : (
+        <p className="min-w-0 flex-1 text-xs text-muted">Drag the chart. Track uses this device's GPS.</p>
+      )}
+      {tracking && !follow && fix && (
+        <button className="h-11 shrink-0 rounded-md border border-line px-3 text-sm" onClick={() => setFollow(true)}>
+          Follow
+        </button>
+      )}
     </div>
   );
 }
