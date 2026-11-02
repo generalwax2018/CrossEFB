@@ -14,7 +14,7 @@ export const Route = createRootRoute({
       { name: "theme-color", content: "#0c1210" },
       {
         name: "description",
-        content: "Cross-platform electronic flight bag for Android and PC.",
+        content: "Cross-platform flight bag for Android and PC. Sectional, GPS track, weather, and a flight file. Not a certified EFB.",
       },
     ],
     links: [
