@@ -68,4 +68,8 @@ The sync code never leaves the device. The server stores a SHA-256 of the code a
 
 ## License
 
-[MIT](LICENSE). Copyright 2026 Michael Waxman.
+Copyright 2026 Michael Waxman.
+
+CrossEFB is free software under the [GNU Affero General Public License v3.0](LICENSE). You may use, change, and share it, including as a hosted app. If you run a changed copy for other people, you must offer them the source of that version under the same license. There is no warranty.
+
+Source for this copy: https://github.com/generalwax2018/CrossEFB
