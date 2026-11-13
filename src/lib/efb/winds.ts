@@ -25,6 +25,8 @@ export type WindPack = {
   forUse: string;
   fetchedAt: string | null;
   stale: boolean;
+  /** Set when the forecast product itself is unavailable, not just a slow fetch. */
+  note?: string;
 };
 
 export const emptyWinds: WindPack = { stations: [], valid: "", forUse: "", fetchedAt: null, stale: false };

@@ -8,7 +8,7 @@
  *   online visit.
  * - Live data (weather, TFRs, NOTAMs, sync) is never served from cache here.
  */
-const TILES = "crossefb-sectionals-v1";
+const TILES = "crossefb-sectionals-v2";
 const SHELL = "crossefb-shell-v2";
 
 self.addEventListener("install", () => self.skipWaiting());
@@ -26,7 +26,9 @@ self.addEventListener("activate", (event) => {
 function isChart(url) {
   return (
     (url.origin === self.location.origin &&
-      (url.pathname.startsWith("/api/charts/tile/") || url.pathname.startsWith("/api/plates/"))) ||
+      (url.pathname.startsWith("/api/charts/tile/") ||
+        url.pathname.startsWith("/api/charts/layer/") ||
+        url.pathname.startsWith("/api/plates/"))) ||
     (url.hostname === "tiles.arcgis.com" && url.pathname.includes("/ssFJjBXIUyZDrSYZ/"))
   );
 }

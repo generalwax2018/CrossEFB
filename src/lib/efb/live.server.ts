@@ -184,7 +184,20 @@ export async function windPack(fcst: "06" | "12" | "24"): Promise<WindPack> {
     async () => {
       const url = `https://aviationweather.gov/api/data/windtemp?region=all&level=low&fcst=${fcst}`;
       const res = await fetch(url, { signal: AbortSignal.timeout(10000), headers: UA });
-      if (!res.ok) throw new Error(String(res.status));
+      if (!res.ok) {
+        const text = await res.text();
+        if (text.toLowerCase().includes("discontinued")) {
+          return {
+            stations: [],
+            valid: "",
+            forUse: "",
+            fetchedAt: new Date().toISOString(),
+            stale: false,
+            note: "The NWS ended the FB winds tables on 3 Nov 2026. Use a manual wind. The graphical forecast is on aviationweather.gov.",
+          };
+        }
+        throw new Error(String(res.status));
+      }
       const parsed = parseWindText(await res.text());
       const stations: WindStation[] = [];
       for (const row of parsed.rows) {

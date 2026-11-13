@@ -311,7 +311,7 @@ export function scoreFrat(input: {
     {
       id: "nightcur",
       label: "Night landing currency",
-      detail: `${input.nightLdg90} full-stop night landings in 90 days`,
+      detail: `${input.nightLdg90} full-stop landings, 1 hour after sunset to 1 hour before sunrise, in 90 days`,
       points: input.night && input.nightLdg90 < 3 ? 4 : 0,
       on: input.night && input.nightLdg90 < 3,
       source: "auto",

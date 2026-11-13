@@ -15,8 +15,8 @@ This is **not a certified EFB** and not a navigation GPS. Do not use it as a sol
 - Live METAR/TAF and flight-category dots for every reporting airport in view (aviationweather.gov).
 - NEXRAD radar, G-AIRMET, SIGMET, and PIREP overlays.
 - TFRs from tfr.faa.gov, drawn on the chart and checked against the route.
-- NOTAMs from the FAA NOTAM API once keys are set (see below).
-- Forecast winds aloft per leg from the NWS FB product, or one manual wind.
+- NOTAMs only if the person hosting this copy adds their own FAA API keys (see below). There is no key in this repository.
+- Forecast wind is a manual entry. The NWS ended the FB winds-aloft tables on 3 Nov 2026.
 
 **Flying**
 - GPS track with own-ship, groundspeed, track, altitude, next fix, desired track, distance, and ETE. Screen stays awake.
@@ -43,13 +43,17 @@ npm run build
 
 ### Server environment
 
-| Variable | Purpose |
-| --- | --- |
-| `FAA_NOTAM_CLIENT_ID`, `FAA_NOTAM_CLIENT_SECRET` | FAA NOTAM API credentials (api.faa.gov). NOTAMs stay off without them. |
-| `FAA_NOTAM_API_URL` | Optional endpoint override (for the FAA NMS successor). |
-| `DATABASE_URL` | Postgres for encrypted sync. Without it a local PGLite database is used. |
+The repository does not include an FAA key. Each person who hosts CrossEFB adds their own. Pilots using a hosted copy never type a key into the app.
 
-Never commit these values. Set them in the hosting provider's settings.
+| Variable | Who sets it | Purpose |
+| --- | --- | --- |
+| `FAA_NOTAM_CLIENT_ID`, `FAA_NOTAM_CLIENT_SECRET` | The host | That host's FAA NOTAM API credentials. NOTAMs stay off until both are set. |
+| `FAA_NOTAM_API_URL` | The host, optional | Endpoint override, for a later FAA interface. |
+| `DATABASE_URL` | The host, optional | Postgres for encrypted sync. Without it a local database is used. |
+
+Copy `.env.example` and fill it in on the machine or in the host's settings. Never commit the filled-in file, and never put a key in an issue, a screenshot, or a chat.
+
+Register for the API with the FAA. CrossEFB cannot share one key across other people's servers. Charts, weather, plates, and TFRs do not use this key.
 
 ### Sync privacy
 
@@ -61,3 +65,7 @@ The sync code never leaves the device. The server stores a SHA-256 of the code a
 - `src/components/efb` — the UI.
 - `src/routes/api` — server routes for charts, weather, TFRs, plates, NOTAMs, and sync.
 - `android-shell/` — Capacitor app that forwards ADS-B packets. See its README.
+
+## License
+
+[MIT](LICENSE). Copyright 2026 Michael Waxman.

@@ -172,8 +172,78 @@ function clockZ(iso: string): string {
   return date.toISOString().slice(11, 16) + "Z";
 }
 
+type RasterImg = { href: string; x: number; y: number; s: number; opacity: number };
+
+const rasterCache = new Map<string, HTMLImageElement>();
+
+function RasterCanvas({
+  w,
+  h,
+  scale,
+  tx,
+  ty,
+  images,
+  className,
+}: {
+  w: number;
+  h: number;
+  scale: number;
+  tx: number;
+  ty: number;
+  images: RasterImg[];
+  className: string;
+}) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const key = images.map((img) => `${img.href}@${img.opacity}`).join("|");
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const cw = Math.max(1, Math.round(w * dpr));
+    const ch = Math.max(1, Math.round(h * dpr));
+    if (canvas.width !== cw) canvas.width = cw;
+    if (canvas.height !== ch) canvas.height = ch;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    let alive = true;
+    const draw = () => {
+      if (!alive) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * tx, dpr * ty);
+      for (const img of images) {
+        const el = rasterCache.get(img.href);
+        if (!el?.complete || !el.naturalWidth) continue;
+        ctx.globalAlpha = img.opacity;
+        ctx.drawImage(el, img.x, img.y, img.s + 0.5, img.s + 0.5);
+      }
+      ctx.globalAlpha = 1;
+    };
+    for (const img of images) {
+      let el = rasterCache.get(img.href);
+      if (!el) {
+        el = new Image();
+        el.decoding = "async";
+        el.src = img.href;
+        rasterCache.set(img.href, el);
+        if (rasterCache.size > 500) {
+          const first = rasterCache.keys().next().value;
+          if (first) rasterCache.delete(first);
+        }
+      }
+      if (!el.complete) el.addEventListener("load", draw, { once: true });
+    }
+    draw();
+    return () => {
+      alive = false;
+    };
+  }, [w, h, scale, tx, ty, key, images]);
+  return <canvas ref={ref} className={`pointer-events-none absolute inset-0 h-full w-full ${className}`} aria-hidden />;
+}
+
 export function Chart() {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const panRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const lat = useEfb((s) => s.lat);
@@ -185,14 +255,17 @@ export function Chart() {
   const flying = useEfb((s) => s.flying);
   const drag = useRef<{
     id: number;
-    x: number;
-    y: number;
+    cx: number;
+    cy: number;
     lat: number;
     lon: number;
     moved: boolean;
+    dx: number;
+    dy: number;
   } | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<number | null>(null);
+  const zoomRaf = useRef(0);
 
   const showAdvisories = useEfb((s) => s.showAdvisories);
   const wxIds = useMemo(() => [...new Set([...route, ...(selected ? [selected] : [])])].slice(0, 16), [route, selected]);
@@ -363,6 +436,27 @@ export function Chart() {
       }),
     [lat, lon, size.w, size.h, pxPerNm, sheets, baseChart],
   );
+  const raster = useMemo(() => {
+    const pack = (tiles: { z: number; x: number; y: number }[], href: (t: { z: number; x: number; y: number }) => string, opacity: number) => {
+      const out: RasterImg[] = [];
+      for (const tile of tiles) {
+        const n = 2 ** tile.z;
+        out.push({
+          href: href(tile),
+          x: (tile.x / n) * STREET_U,
+          y: (tile.y / n) * STREET_U,
+          s: STREET_U / n,
+          opacity,
+        });
+      }
+      return out;
+    };
+    return {
+      sectional: pack(chartTiles, (t) => `/api/charts/tile/${t.z}/${t.x}/${t.y}`, 1),
+      faa: faaLayer ? pack(faaTiles, (t) => faaLayer.url(t.z, t.x, t.y), 1) : [],
+      radar: showRadar ? pack(radarTiles, (t) => `${RADAR_LAYER.url(t.z, t.x, t.y)}?t=${radarStamp.key}`, 0.7) : [],
+    };
+  }, [chartTiles, faaTiles, faaLayer, radarTiles, showRadar, radarStamp.key]);
 
   useLayoutEffect(() => {
     const wrap = wrapRef.current;
@@ -477,7 +571,7 @@ export function Chart() {
   const adsbTargets = useAdsb((s) => s.targets);
   const adsbOwn = useAdsb((s) => s.ownship);
   const adsbConnected = useAdsb((s) => s.connected);
-  const ownAlt = adsbOwn?.altFt ?? (live?.altFt != null ? live.altFt : null);
+  const ownAlt = adsbOwn?.altFt ?? null;
   const ownPos = live ? { lat: live.lat, lon: live.lon } : adsbOwn ? { lat: adsbOwn.lat, lon: adsbOwn.lon } : null;
 
   // No-wind glide range: height above the nearest field times the glide ratio.
@@ -566,6 +660,20 @@ export function Chart() {
 
   return (
     <div ref={wrapRef} className="relative h-full w-full" style={{ background: "var(--chart-paper)" }}>
+      <div ref={panRef} className="absolute inset-0">
+      <RasterCanvas w={w} h={h} scale={streetScale} tx={streetTx} ty={streetTy} images={raster.sectional} className="sectional-tiles" />
+      {faaLayer && (
+        <RasterCanvas
+          w={w}
+          h={h}
+          scale={streetScale}
+          tx={streetTx}
+          ty={streetTy}
+          images={raster.faa}
+          className={faaLayer.paper === "ifr" ? "ifr-tiles" : "sectional-tiles"}
+        />
+      )}
+      {showRadar && <RasterCanvas w={w} h={h} scale={streetScale} tx={streetTx} ty={streetTy} images={raster.radar} className="radar-tiles" />}
       <svg
         ref={svgRef}
         className="relative z-10 h-full w-full touch-none"
@@ -579,13 +687,24 @@ export function Chart() {
           const y = e.clientY - rect.top;
           pointers.current.set(e.pointerId, { x, y });
           if (pointers.current.size === 2) {
+            const d = drag.current;
+            if (d?.moved) {
+              const world = TILE * 2 ** mapZoom(useEfb.getState().pxPerNm, d.lat);
+              const cy = mercY(d.lat) - d.dy / world;
+              let cx = (d.lon + 180) / 360 - d.dx / world;
+              cx = ((cx % 1) + 1) % 1;
+              let nextLon = cx * 360 - 180;
+              if (nextLon > 180) nextLon -= 360;
+              useEfb.getState().setView(latFromMercY(cy), nextLon);
+            }
+            if (panRef.current) panRef.current.style.transform = "";
             const [a, b] = [...pointers.current.values()];
             pinch.current = Math.hypot(a.x - b.x, a.y - b.y);
             drag.current = null;
             return;
           }
           const s = useEfb.getState();
-          drag.current = { id: e.pointerId, x, y, lat: s.lat, lon: s.lon, moved: false };
+          drag.current = { id: e.pointerId, cx: e.clientX, cy: e.clientY, lat: s.lat, lon: s.lon, moved: false, dx: 0, dy: 0 };
         }}
         onPointerMove={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
@@ -598,34 +717,41 @@ export function Chart() {
             const s = useEfb.getState();
             const next = Math.min(48, Math.max(0.35, s.pxPerNm * (dist / pinch.current)));
             pinch.current = dist;
-            s.setView(s.lat, s.lon, next);
+            cancelAnimationFrame(zoomRaf.current);
+            zoomRaf.current = requestAnimationFrame(() => useEfb.getState().setView(useEfb.getState().lat, useEfb.getState().lon, next));
             return;
           }
           const d = drag.current;
           if (!d || d.id !== e.pointerId) return;
-          const dx = x - d.x;
-          const dy = y - d.y;
+          const dx = e.clientX - d.cx;
+          const dy = e.clientY - d.cy;
+          d.dx = dx;
+          d.dy = dy;
           if (Math.hypot(dx, dy) > 5) {
             d.moved = true;
             if (useTrack.getState().tracking) useTrack.getState().setFollow(false);
           }
-          const s = useEfb.getState();
-          const world = TILE * 2 ** mapZoom(s.pxPerNm, d.lat);
-          const cy = mercY(d.lat) - dy / world;
-          let cx = (d.lon + 180) / 360 - dx / world;
-          cx = ((cx % 1) + 1) % 1;
-          let nextLon = cx * 360 - 180;
-          if (nextLon > 180) nextLon -= 360;
-          s.setView(latFromMercY(cy), nextLon, s.pxPerNm);
+          if (panRef.current) panRef.current.style.transform = `translate(${dx}px, ${dy}px)`;
         }}
         onPointerUp={(e) => {
           const d = drag.current;
           pointers.current.delete(e.pointerId);
           if (pointers.current.size < 2) pinch.current = null;
           if (d && d.id === e.pointerId) {
+            const dx = e.clientX - d.cx;
+            const dy = e.clientY - d.cy;
+            if (panRef.current) panRef.current.style.transform = "";
             if (!d.moved) {
               const rect = e.currentTarget.getBoundingClientRect();
               hit(e.clientX - rect.left, e.clientY - rect.top);
+            } else {
+              const world = TILE * 2 ** mapZoom(useEfb.getState().pxPerNm, d.lat);
+              const cy = mercY(d.lat) - dy / world;
+              let cx = (d.lon + 180) / 360 - dx / world;
+              cx = ((cx % 1) + 1) % 1;
+              let nextLon = cx * 360 - 180;
+              if (nextLon > 180) nextLon -= 360;
+              useEfb.getState().setView(latFromMercY(cy), nextLon, useEfb.getState().pxPerNm);
             }
             drag.current = null;
           }
@@ -634,6 +760,7 @@ export function Chart() {
           pointers.current.delete(e.pointerId);
           drag.current = null;
           pinch.current = null;
+          if (panRef.current) panRef.current.style.transform = "";
         }}
       >
         <rect width={w} height={h} fill="transparent" />
@@ -679,74 +806,6 @@ export function Chart() {
             />
           )}
         </g>
-        <g
-          pointerEvents="none"
-          className="sectional-tiles"
-          transform={`matrix(${streetScale} 0 0 ${streetScale} ${streetTx} ${streetTy})`}
-        >
-          {chartTiles.map((tile) => {
-            const n = 2 ** tile.z;
-            const s = STREET_U / n;
-            return (
-              <image
-                key={`${tile.z}/${tile.x}/${tile.y}`}
-                href={`/api/charts/tile/${tile.z}/${tile.x}/${tile.y}`}
-                x={(tile.x / n) * STREET_U}
-                y={(tile.y / n) * STREET_U}
-                width={s}
-                height={s}
-                preserveAspectRatio="none"
-              />
-            );
-          })}
-        </g>
-        {faaLayer && (
-          <g
-            pointerEvents="none"
-            className={faaLayer.paper === "ifr" ? "ifr-tiles" : "sectional-tiles"}
-            transform={`matrix(${streetScale} 0 0 ${streetScale} ${streetTx} ${streetTy})`}
-          >
-            {faaTiles.map((tile) => {
-              const n = 2 ** tile.z;
-              const s = STREET_U / n;
-              return (
-                <image
-                  key={`${faaLayer.id}/${tile.z}/${tile.x}/${tile.y}`}
-                  href={faaLayer.url(tile.z, tile.x, tile.y)}
-                  x={(tile.x / n) * STREET_U}
-                  y={(tile.y / n) * STREET_U}
-                  width={s}
-                  height={s}
-                  preserveAspectRatio="none"
-                />
-              );
-            })}
-          </g>
-        )}
-        {showRadar && (
-          <g
-            pointerEvents="none"
-            className="radar-tiles"
-            opacity={0.7}
-            transform={`matrix(${streetScale} 0 0 ${streetScale} ${streetTx} ${streetTy})`}
-          >
-            {radarTiles.map((tile) => {
-              const n = 2 ** tile.z;
-              const s = STREET_U / n;
-              return (
-                <image
-                  key={`radar/${tile.z}/${tile.x}/${tile.y}/${radarStamp.key}`}
-                  href={`${RADAR_LAYER.url(tile.z, tile.x, tile.y)}?t=${radarStamp.key}`}
-                  x={(tile.x / n) * STREET_U}
-                  y={(tile.y / n) * STREET_U}
-                  width={s}
-                  height={s}
-                  preserveAspectRatio="none"
-                />
-              );
-            })}
-          </g>
-        )}
         {lats.map((glat) => {
           const y = toXY(glat, lon).y;
           return (
@@ -1128,7 +1187,7 @@ export function Chart() {
               fontSize={11}
               fontFamily="IBM Plex Mono, ui-monospace, monospace"
             >
-              {`GLIDE ${glide.nm.toFixed(1)} NM · no wind`}
+              {`GLIDE ${glide.nm.toFixed(1)} NM · no wind · field elev, not terrain`}
             </text>
           </g>
         )}
@@ -1168,6 +1227,7 @@ export function Chart() {
           {scaleNm} NM
         </text>
       </svg>
+      </div>
       <div className="pointer-events-none absolute top-3 left-3 z-10 flex max-w-[calc(100%-5.5rem)] flex-col items-start gap-1.5">
         {faaLayer ? (
           <StatusChip tone={faaTiles.length ? "ok" : "wait"}>{`FAA ${faaLayer.label} · current edition`}</StatusChip>

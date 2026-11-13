@@ -10,7 +10,7 @@ import { nitro } from "nitro/vite";
 import { grokPwaPlugin } from "./scripts/grok-pwa-plugin.mjs";
 // @ts-expect-error JS plugin alongside the TS vite config
 import { appEnvPlugin } from "./scripts/app-env-plugin.mjs";
-import { isMigrationFile } from "./scripts/migration-plan.mjs";
+import { clientIp, limited } from "./scripts/rate-limit.mjs";
 
 /** The files `src/lib/db.ts` globs — same directory, same non-recursive scope. */
 function hasGlobbedMigrations(root: string): boolean {
@@ -19,6 +19,54 @@ function hasGlobbedMigrations(root: string): boolean {
   } catch {
     return false;
   }
+}
+
+function requestGuardPlugin(): Plugin {
+  const headers: [string, string][] = [
+    ["x-content-type-options", "nosniff"],
+    ["referrer-policy", "strict-origin-when-cross-origin"],
+    ["permissions-policy", "camera=(), microphone=(), geolocation=(self)"],
+    [
+      "content-security-policy",
+      [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://grok.com",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' https://fonts.gstatic.com data:",
+        "img-src 'self' data: blob:",
+        "connect-src 'self' https://grok.com https://tiles.openfreemap.org https://*.openfreemap.org https://mesonet.agron.iastate.edu",
+        "worker-src 'self' blob:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+      ].join("; "),
+    ],
+  ];
+  return {
+    name: "crossefb-request-guard",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const path = (req.url ?? "").split("?", 1)[0] ?? "";
+        if (path.startsWith("/api/")) {
+          const ip = clientIp({
+            get: (name) => {
+              const v = req.headers[name];
+              return Array.isArray(v) ? v[0] : (v ?? null);
+            },
+          });
+          if (limited(ip, path)) {
+            res.statusCode = 429;
+            res.setHeader("content-type", "application/json");
+            res.setHeader("retry-after", "60");
+            res.end('{"error":"slow down"}');
+            return;
+          }
+        }
+        for (const [key, value] of headers) res.setHeader(key, value);
+        next();
+      });
+    },
+  };
 }
 
 /**
@@ -159,6 +207,7 @@ export default defineConfig(({ command, isPreview }) => ({
   resolve: { tsconfigPaths: true },
   plugins: [
     pgliteBootstrapPlugin(),
+    requestGuardPlugin(),
     // Before tanstackStart so /auth/popup never falls through to the SPA.
     authPopupPlugin(),
     // Dev-only /__app-env, read by scripts/check-auth-invariant.mjs.

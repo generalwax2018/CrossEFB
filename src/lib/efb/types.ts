@@ -137,7 +137,10 @@ export type LogEntry = {
   night: number;
   approaches: number;
   dayLdg: number;
+  /** Civil night landings. These do not by themselves satisfy 61.57(b). */
   nightLdg: number;
+  /** Full-stop landings from 1 hour after sunset to 1 hour before sunrise. */
+  nightFullStop: number;
   pic: string;
   remarks: string;
   tail: string;

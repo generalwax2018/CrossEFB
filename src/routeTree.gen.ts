@@ -20,6 +20,7 @@ import { Route as ApiWxMetarsRouteImport } from './routes/api/wx/metars'
 import { Route as ApiWxWindsRouteImport } from './routes/api/wx/winds'
 import { Route as ApiPlatesPdfCycleFileRouteImport } from './routes/api/plates/pdf/$cycle.$file'
 import { Route as ApiChartsTileZXYRouteImport } from './routes/api/charts/tile/$z/$x/$y'
+import { Route as ApiChartsLayerLayerZXYRouteImport } from './routes/api/charts/layer/$layer/$z/$x/$y'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -76,6 +77,11 @@ const ApiChartsTileZXYRoute = ApiChartsTileZXYRouteImport.update({
   path: '/api/charts/tile/$z/$x/$y',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiChartsLayerLayerZXYRoute = ApiChartsLayerLayerZXYRouteImport.update({
+  id: '/api/charts/layer/$layer/$z/$x/$y',
+  path: '/api/charts/layer/$layer/$z/$x/$y',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/api/wx/winds': typeof ApiWxWindsRoute
   '/api/plates/pdf/$cycle/$file': typeof ApiPlatesPdfCycleFileRoute
   '/api/charts/tile/$z/$x/$y': typeof ApiChartsTileZXYRoute
+  '/api/charts/layer/$layer/$z/$x/$y': typeof ApiChartsLayerLayerZXYRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/api/wx/winds': typeof ApiWxWindsRoute
   '/api/plates/pdf/$cycle/$file': typeof ApiPlatesPdfCycleFileRoute
   '/api/charts/tile/$z/$x/$y': typeof ApiChartsTileZXYRoute
+  '/api/charts/layer/$layer/$z/$x/$y': typeof ApiChartsLayerLayerZXYRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -116,6 +124,7 @@ export interface FileRoutesById {
   '/api/wx/winds': typeof ApiWxWindsRoute
   '/api/plates/pdf/$cycle/$file': typeof ApiPlatesPdfCycleFileRoute
   '/api/charts/tile/$z/$x/$y': typeof ApiChartsTileZXYRoute
+  '/api/charts/layer/$layer/$z/$x/$y': typeof ApiChartsLayerLayerZXYRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -131,6 +140,7 @@ export interface FileRouteTypes {
     | '/api/wx/winds'
     | '/api/plates/pdf/$cycle/$file'
     | '/api/charts/tile/$z/$x/$y'
+    | '/api/charts/layer/$layer/$z/$x/$y'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -144,6 +154,7 @@ export interface FileRouteTypes {
     | '/api/wx/winds'
     | '/api/plates/pdf/$cycle/$file'
     | '/api/charts/tile/$z/$x/$y'
+    | '/api/charts/layer/$layer/$z/$x/$y'
   id:
     | '__root__'
     | '/'
@@ -157,6 +168,7 @@ export interface FileRouteTypes {
     | '/api/wx/winds'
     | '/api/plates/pdf/$cycle/$file'
     | '/api/charts/tile/$z/$x/$y'
+    | '/api/charts/layer/$layer/$z/$x/$y'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -171,6 +183,7 @@ export interface RootRouteChildren {
   ApiWxWindsRoute: typeof ApiWxWindsRoute
   ApiPlatesPdfCycleFileRoute: typeof ApiPlatesPdfCycleFileRoute
   ApiChartsTileZXYRoute: typeof ApiChartsTileZXYRoute
+  ApiChartsLayerLayerZXYRoute: typeof ApiChartsLayerLayerZXYRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -252,6 +265,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChartsTileZXYRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/charts/layer/$layer/$z/$x/$y': {
+      id: '/api/charts/layer/$layer/$z/$x/$y'
+      path: '/api/charts/layer/$layer/$z/$x/$y'
+      fullPath: '/api/charts/layer/$layer/$z/$x/$y'
+      preLoaderRoute: typeof ApiChartsLayerLayerZXYRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -267,6 +287,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiWxWindsRoute: ApiWxWindsRoute,
   ApiPlatesPdfCycleFileRoute: ApiPlatesPdfCycleFileRoute,
   ApiChartsTileZXYRoute: ApiChartsTileZXYRoute,
+  ApiChartsLayerLayerZXYRoute: ApiChartsLayerLayerZXYRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

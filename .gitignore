@@ -3,6 +3,7 @@ dist
 .output
 .env
 .env.*
+!.env.example
 *.log
 .DS_Store
 screenshots
@@ -13,5 +14,7 @@ screenshots
 .node_modules.lock
 artifacts
 data/charts
+# Onboarding mail and credential screenshots. Never publish these.
+/attachments
 
 

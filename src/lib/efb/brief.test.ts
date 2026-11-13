@@ -3,21 +3,23 @@ import assert from "node:assert/strict";
 import { currency, goNoGo, logbookCsv } from "./brief.ts";
 import { tfrsOnRoute } from "./live.ts";
 
-const log = (date: string, dayLdg: number, nightLdg: number) => ({
-  id: date, date, from: "KAPA", to: "KAPA", total: 1, night: 0, approaches: 0, dayLdg, nightLdg, pic: "Self", remarks: "", tail: "N1",
+const log = (date: string, dayLdg: number, nightLdg: number, nightFullStop = 0) => ({
+  id: date, date, from: "KAPA", to: "KAPA", total: 1, night: 0, approaches: 0, dayLdg, nightLdg, nightFullStop, pic: "Self", remarks: "", tail: "N1",
   studentId: "", student: "", dual: 0, ground: 0,
 });
 
 test("passenger currency", () => {
   const now = new Date("2026-11-02T12:00:00Z");
-  const items = currency([log("2026-10-20", 2, 0), log("2026-09-01", 1, 3)], { name: "", flightReview: "2025-03-15", medicalExpires: "2026-01-01", xwindMin: 12 }, now);
-  const get = (id: string) => items.find((i) => i.id === id)!;
-  assert.equal(get("day").ok, true);
-  assert.match(get("day").detail, /2026-11-30/);
-  assert.equal(get("night").ok, true);
-  assert.equal(get("review").ok, true);
-  assert.match(get("review").detail, /2027-03-31/);
-  assert.equal(get("medical").ok, false);
+  const civil = currency([log("2026-10-20", 2, 0), log("2026-09-01", 1, 3)], { name: "", flightReview: "2025-03-15", medicalExpires: "2026-01-01", xwindMin: 12 }, now);
+  const get = (items: ReturnType<typeof currency>, id: string) => items.find((i) => i.id === id)!;
+  assert.equal(get(civil, "day").ok, true);
+  assert.match(get(civil, "day").detail, /2026-11-30/);
+  assert.equal(get(civil, "night").ok, false);
+  const legal = currency([log("2026-10-20", 0, 3, 3)], { name: "", flightReview: "2025-03-15", medicalExpires: "2027-01-01", xwindMin: 12 }, now);
+  assert.equal(get(legal, "night").ok, true);
+  assert.equal(get(civil, "review").ok, true);
+  assert.match(get(civil, "review").detail, /2027-03-31/);
+  assert.equal(get(civil, "medical").ok, false);
 });
 
 test("csv escapes", () => {

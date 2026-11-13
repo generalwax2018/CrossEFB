@@ -4,6 +4,7 @@ import { DEFAULT_LOADS, isCustomId, profileById, resolveAircraft } from "./aircr
 import { getAirport } from "./airports";
 import { buildLegs, totals } from "./nav";
 import { isLocalNight } from "./sun";
+import { pickBackup } from "./backup";
 import type { BaseChart } from "./layers";
 import type { Aircraft, ChartMode, DocId, FratManual, LogEntry, PilotRecord, Rental, SavedPlan, Student, Tab, WindMode } from "./types";
 
@@ -30,6 +31,7 @@ function cleanLog(entries: LogEntry[] | undefined): LogEntry[] {
       student: entry.student ?? "",
       dual: typeof entry.dual === "number" ? entry.dual : 0,
       ground: typeof entry.ground === "number" ? entry.ground : 0,
+      nightFullStop: typeof entry.nightFullStop === "number" ? entry.nightFullStop : 0,
     }));
 }
 
@@ -233,15 +235,22 @@ export const useEfb = create<EfbState>()(
       setNearestOpen: (nearestOpen) => set({ nearestOpen }),
       restore: (data, opts) => {
         const body = data as { app?: string; state?: Record<string, unknown> } | null;
-        if (!body || body.app !== "crossefb" || typeof body.state !== "object" || !body.state) return false;
-        const st = body.state;
+        if (!body || body.app !== "crossefb" || typeof body.state !== "object" || !body.state || Array.isArray(body.state)) return false;
+        const st = pickBackup(body.state);
         set((s) => ({
           ...s,
           ...st,
-          aircraft: resolveAircraft((st.aircraft as Aircraft) ?? s.aircraft),
-          pilot: { ...defaultPilot, ...(st.pilot as Partial<PilotRecord> | undefined) },
+          syncKey: s.syncKey,
+          aircraft: resolveAircraft(st.aircraft ?? s.aircraft),
+          myAircraft: st.myAircraft ? st.myAircraft.map((a) => resolveAircraft(a)) : s.myAircraft,
+          pilot: { ...defaultPilot, ...s.pilot, ...st.pilot },
+          loads: st.loads ? { ...DEFAULT_LOADS, ...st.loads } : s.loads,
+          fratManual: st.fratManual ? { ...emptyManual, ...st.fratManual } : s.fratManual,
+          rental: st.rental ? { ...defaultRental, ...st.rental } : s.rental,
+          logbook: st.logbook ? cleanLog(st.logbook) : s.logbook,
+          students: st.students ? cleanStudents(st.students) : s.students,
           tab: opts?.keepUi ? s.tab : "chart",
-          doc: opts?.keepUi ? s.doc : ((st.doc as EfbState["doc"]) ?? s.doc),
+          doc: opts?.keepUi ? s.doc : (st.doc ?? s.doc),
           lat: s.lat,
           lon: s.lon,
           pxPerNm: s.pxPerNm,
@@ -402,6 +411,7 @@ export const useEfb = create<EfbState>()(
             approaches: 0,
             dayLdg: night ? 0 : 1,
             nightLdg: night ? 1 : 0,
+            nightFullStop: 0,
             pic: s.rental.pic,
             remarks: s.route.join(" "),
             tail: aircraft.tail,
@@ -425,6 +435,7 @@ export const useEfb = create<EfbState>()(
             approaches: 0,
             dayLdg: 0,
             nightLdg: 0,
+            nightFullStop: 0,
             pic: s.rental.pic,
             remarks: "",
             tail: resolveAircraft(s.aircraft).tail,

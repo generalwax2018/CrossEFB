@@ -2,15 +2,24 @@
  * Raster chart layers.
  *
  * Sectional comes from this app's own FAA GeoTIFF pipeline (/api/charts/tile).
- * Terminal area and IFR en-route charts come from the FAA Aeronautical
- * Information Services tile services on ArcGIS Online (256 px, Web Mercator,
- * /tile/{z}/{y}/{x}). Radar is the NWS NEXRAD base-reflectivity composite as
- * cached by the Iowa Environmental Mesonet.
+ * Terminal area, IFR, and radar tiles are fetched through this app
+ * (`/api/charts/layer/...`) so a saved copy counts as a normal same-origin file.
  */
 
 export type BaseChart = "sectional" | "tac" | "ifrlow" | "ifrhigh";
 
 const AGOL = "https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services";
+
+export const UPSTREAM_TILES: Record<string, (z: number, x: number, y: number) => string> = {
+  tac: (z, x, y) => `${AGOL}/VFR_Terminal/MapServer/tile/${z}/${y}/${x}`,
+  ifrlow: (z, x, y) => `${AGOL}/IFR_AreaLow/MapServer/tile/${z}/${y}/${x}`,
+  ifrhigh: (z, x, y) => `${AGOL}/IFR_High/MapServer/tile/${z}/${y}/${x}`,
+  radar: (z, x, y) => `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/${z}/${x}/${y}.png`,
+};
+
+function localTile(layer: string) {
+  return (z: number, x: number, y: number) => `/api/charts/layer/${layer}/${z}/${x}/${y}`;
+}
 
 export type TileLayer = {
   id: string;
@@ -29,7 +38,7 @@ export const FAA_LAYERS: Record<Exclude<BaseChart, "sectional">, TileLayer> = {
     minZ: 9,
     maxZ: 12,
     paper: "vfr",
-    url: (z, x, y) => `${AGOL}/VFR_Terminal/MapServer/tile/${z}/${y}/${x}`,
+    url: localTile("tac"),
   },
   ifrlow: {
     id: "ifrlow",
@@ -37,7 +46,7 @@ export const FAA_LAYERS: Record<Exclude<BaseChart, "sectional">, TileLayer> = {
     minZ: 7,
     maxZ: 12,
     paper: "ifr",
-    url: (z, x, y) => `${AGOL}/IFR_AreaLow/MapServer/tile/${z}/${y}/${x}`,
+    url: localTile("ifrlow"),
   },
   ifrhigh: {
     id: "ifrhigh",
@@ -45,7 +54,7 @@ export const FAA_LAYERS: Record<Exclude<BaseChart, "sectional">, TileLayer> = {
     minZ: 5,
     maxZ: 9,
     paper: "ifr",
-    url: (z, x, y) => `${AGOL}/IFR_High/MapServer/tile/${z}/${y}/${x}`,
+    url: localTile("ifrhigh"),
   },
 };
 
@@ -55,7 +64,7 @@ export const RADAR_LAYER: TileLayer = {
   minZ: 3,
   maxZ: 10,
   paper: "vfr",
-  url: (z, x, y) => `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/${z}/${x}/${y}.png`,
+  url: localTile("radar"),
 };
 
 export const RADAR_META = "https://mesonet.agron.iastate.edu/data/gis/images/4326/USCOMP/n0q_0.json";

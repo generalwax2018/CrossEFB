@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { backupState } from "@/lib/efb/backup";
 import {
   AlertTriangle,
   Download,
@@ -42,13 +43,15 @@ export function WindModeSwitch() {
         value={mode}
         onChange={setMode}
         options={[
-          { id: "forecast", label: "Forecast (FB)" },
+          { id: "forecast", label: "Forecast" },
           { id: "manual", label: "Manual" },
         ]}
       />
       {mode === "forecast" && (
         <p className="text-xs text-faint">
-          {winds.fetchedAt
+          {winds.note
+            ? winds.note
+            : winds.fetchedAt
             ? `NWS winds aloft at ${cruiseFt.toLocaleString()} ft, valid ${winds.valid}${winds.forUse ? ` (use ${winds.forUse})` : ""}${
                 winds.stale ? " · last copy" : ""
               }. Each leg uses the nearest stations.`
@@ -357,16 +360,16 @@ export function DataBackup() {
     <section className="flex flex-col gap-2">
       <SectionTitle>Your data</SectionTitle>
       <p className="text-xs text-faint">
-        Plans, aircraft, logbook, and settings live in this browser. Back them up to move to another device.
+        Plans, aircraft, logbook, and settings live in this browser. A backup does not include the sync code.
       </p>
       <div className="grid grid-cols-2 gap-2">
         <Btn
           size="sm"
           icon={<Download className="size-3.5" />}
           onClick={() => {
-            let state: unknown = {};
+            let state: Record<string, unknown> = {};
             try {
-              state = JSON.parse(localStorage.getItem("crossefb") ?? "{}").state ?? {};
+              state = backupState((JSON.parse(localStorage.getItem("crossefb") ?? "{}").state ?? {}) as Record<string, unknown>);
             } catch {
               state = {};
             }
@@ -736,7 +739,7 @@ export function NotamList({ icaos, compact }: { icaos: string[]; compact?: boole
   if (!pack.configured) {
     return (
       <p className={cx("text-xs text-muted", compact && "mt-2")}>
-        NOTAM text appears here once FAA API keys are set on the server.{" "}
+        NOTAM text is off until the person hosting this copy adds their own FAA API keys. This app does not include a key.{" "}
         <a className="underline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank" rel="noreferrer">
           FAA NOTAM search
         </a>
@@ -947,10 +950,10 @@ export function DataSourcesSheet() {
     },
     { name: "METAR / TAF", source: "aviationweather.gov", status: metars.fetchedAt ? `Map layer ${z(metars.fetchedAt)}` : "On demand", ok: true },
     { name: "Advisories, PIREPs", source: "aviationweather.gov", status: "Every 5 min while shown", ok: true },
-    { name: "Winds aloft", source: "NWS FB forecast", status: winds.valid ? `Valid ${winds.valid}${winds.stale ? " (last copy)" : ""}` : "When forecast mode is on", ok: winds.valid ? !winds.stale : null },
+    { name: "Winds aloft", source: "NWS", status: winds.note ? "FB tables ended 3 Nov 2026" : winds.valid ? `Valid ${winds.valid}${winds.stale ? " (last copy)" : ""}` : "When forecast mode is on", ok: winds.note ? false : winds.valid ? !winds.stale : null },
     { name: "TFRs", source: "tfr.faa.gov", status: tfrs.fetchedAt ? `${tfrs.tfrs.length} active · ${z(tfrs.fetchedAt)}${tfrs.stale ? " (last copy)" : ""}` : "loading…", ok: tfrs.fetchedAt ? !tfrs.stale : null },
     { name: "Radar", source: "NWS NEXRAD via Iowa State Mesonet", status: radar ? `Valid ${z(radar)}` : "—", ok: radar ? true : null },
-    { name: "NOTAMs", source: "FAA NOTAM API", status: notams === null ? "—" : notams ? "Connected" : "Waiting for FAA API keys", ok: notams },
+    { name: "NOTAMs", source: "Host's FAA API key", status: notams === null ? "—" : notams ? "Connected" : "Host has not added a key", ok: notams },
     { name: "Airports", source: "Built into the app", status: "Update with app releases", ok: true },
   ];
   return (

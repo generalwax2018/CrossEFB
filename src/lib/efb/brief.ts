@@ -47,8 +47,8 @@ function reviewDue(iso: string): Date | null {
 }
 
 export function currency(entries: LogEntry[], pilot: PilotRecord, now = new Date()): CurrencyItem[] {
-  const day = landingCurrency(entries, (e) => e.dayLdg + e.nightLdg, now);
-  const night = landingCurrency(entries, (e) => e.nightLdg, now);
+  const day = landingCurrency(entries, (e) => e.dayLdg + Math.max(e.nightLdg, e.nightFullStop ?? 0), now);
+  const night = landingCurrency(entries, (e) => e.nightFullStop ?? 0, now);
   const review = reviewDue(pilot.flightReview);
   const medical = parseDate(pilot.medicalExpires);
   return [
@@ -62,7 +62,7 @@ export function currency(entries: LogEntry[], pilot: PilotRecord, now = new Date
       id: "night",
       label: "Passengers, night",
       ok: night.ok,
-      detail: night.ok && night.until ? `Current until ${fmt(night.until)}` : `${night.count} of 3 night landings in 90 days`,
+      detail: night.ok && night.until ? `Current until ${fmt(night.until)}` : `${night.count} of 3 full-stop night landings in 90 days`,
     },
     {
       id: "review",
@@ -80,13 +80,13 @@ export function currency(entries: LogEntry[], pilot: PilotRecord, now = new Date
 }
 
 export function logbookCsv(entries: LogEntry[]): string {
-  const head = ["Date", "Aircraft", "From", "To", "Total", "Night", "Approaches", "Day landings", "Night landings", "PIC", "Student", "Dual given", "Ground", "Remarks"];
+  const head = ["Date", "Aircraft", "From", "To", "Total", "Night", "Approaches", "Day landings", "Night landings", "Night full-stop", "PIC", "Student", "Dual given", "Ground", "Remarks"];
   const esc = (v: string | number) => {
     const s = String(v ?? "");
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const rows = entries.map((e) =>
-    [e.date, e.tail, e.from, e.to, e.total, e.night, e.approaches, e.dayLdg, e.nightLdg, e.pic, e.student ?? "", e.dual ?? 0, e.ground ?? 0, e.remarks].map(esc).join(","),
+    [e.date, e.tail, e.from, e.to, e.total, e.night, e.approaches, e.dayLdg, e.nightLdg, e.nightFullStop ?? 0, e.pic, e.student ?? "", e.dual ?? 0, e.ground ?? 0, e.remarks].map(esc).join(","),
   );
   return [head.join(","), ...rows].join("\n") + "\n";
 }

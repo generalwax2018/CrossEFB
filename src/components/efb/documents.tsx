@@ -476,7 +476,7 @@ function FratSheet() {
     toMargin: f.perf.toMargin,
     hours90: hoursIn(logbook, 90, (e) => e.total),
     hoursType: logbook.filter((e) => e.tail === f.aircraft.tail).reduce((n, e) => n + e.total, 0),
-    nightLdg90: hoursIn(logbook, 90, (e) => e.nightLdg),
+    nightLdg90: hoursIn(logbook, 90, (e) => e.nightFullStop ?? 0),
   });
   const band =
     scored.band === "high" ? "High risk" : scored.band === "medium" ? "Medium risk" : "Low risk";
@@ -620,7 +620,7 @@ function downloadCsv(name: string, rows: (string | number)[][]) {
   URL.revokeObjectURL(url);
 }
 
-const LOG_HEAD = ["Date", "Tail", "From", "To", "Total", "Night", "Appr", "Day ldg", "Night ldg", "PIC", "Remarks"];
+const LOG_HEAD = ["Date", "Tail", "From", "To", "Total", "Night", "Appr", "Day ldg", "Night ldg", "Night FS", "PIC", "Remarks"];
 
 function LogSheet() {
   const logbook = useEfb((s) => s.logbook);
@@ -632,7 +632,7 @@ function LogSheet() {
   const remove = useEfb((s) => s.removeLog);
   const total = logbook.reduce((n, e) => n + e.total, 0);
   const dual = logbook.reduce((n, e) => n + e.dual, 0);
-  const night90 = hoursIn(logbook, 90, (e) => e.nightLdg);
+  const nightFs = hoursIn(logbook, 90, (e) => e.nightFullStop ?? 0);
   const heads = instructor ? ["Student", "Dual", "Ground", ...LOG_HEAD] : LOG_HEAD;
   const blanks = Array.from({ length: 8 }, (_, i) => i);
 
@@ -642,7 +642,7 @@ function LogSheet() {
       <div className="no-print flex flex-wrap items-center justify-between gap-3">
         <p className="font-mono text-sm">
           {total.toFixed(1)} hr in this copy
-          {instructor ? ` · ${dual.toFixed(1)} dual given` : ""} · {night90} night landings in 90 days
+          {instructor ? ` · ${dual.toFixed(1)} dual given` : ""} · {nightFs} night full-stop in 90 days
         </p>
         <div className="flex flex-wrap gap-2">
           <Btn onClick={add}>Add a line</Btn>
@@ -650,10 +650,10 @@ function LogSheet() {
         </div>
       </div>
       <p className="text-sm text-muted">
-        Working copy only. Print it and write on the blank lines, or export the CSV into your own book. CrossEFB does not keep the official log.
+        Working copy only. Print it and write on the blank lines, or export the CSV into your own book. CrossEFB does not keep the official log. Night passenger currency counts only full-stop landings from one hour after sunset until one hour before sunrise. Civil-night landings stay in the night column and do not count.
       </p>
       <div className="max-w-full overflow-x-auto">
-        <table className="w-full min-w-[880px] border-collapse text-left text-xs">
+        <table className="w-full min-w-[980px] border-collapse text-left text-xs">
           <thead>
             <tr className="border-b border-line text-muted">
               {heads.map((head) => (
@@ -752,6 +752,9 @@ function LogRow({
       </td>
       <td className="p-1">
         <Num label="" value={entry.nightLdg} onChange={(n) => onChange(entry.id, { nightLdg: n })} />
+      </td>
+      <td className="p-1">
+        <Num label="" value={entry.nightFullStop ?? 0} onChange={(n) => onChange(entry.id, { nightFullStop: n })} />
       </td>
       <td className="p-1">
         <input className={cell} value={entry.pic} onChange={(e) => onChange(entry.id, { pic: e.target.value })} />

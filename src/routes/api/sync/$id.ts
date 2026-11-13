@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 const MAX = 1_500_000;
+const MAX_ROWS = 2000;
 const valid = (id: string) => /^[0-9a-f]{64}$/.test(id);
 
 type Row = { blob: string; rev: number; updated_at: string | Date };
@@ -43,6 +44,15 @@ export const Route = createFileRoute("/api/sync/$id")({
         try {
           const { getSql } = await import("@/lib/db");
           const sql = await getSql();
+          if (baseRev === 0) {
+            const have = await sql<{ n: number }>`select count(*) as n from sync_blobs where id = ${id}`;
+            if (!Number(have[0]?.n)) {
+              const counted = await sql<{ n: number }>`select count(*) as n from sync_blobs`;
+              if (Number(counted[0]?.n ?? 0) >= MAX_ROWS) {
+                return Response.json({ error: "sync storage is full" }, { status: 429, headers: { "retry-after": "3600" } });
+              }
+            }
+          }
           // Optimistic concurrency: only write on top of the revision the device last saw.
           const rows =
             baseRev === 0
