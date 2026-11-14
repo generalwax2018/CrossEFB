@@ -991,7 +991,7 @@ export function DataSourcesSheet() {
           ))}
         </ul>
         <p className="border-t border-line px-4 py-2 text-[0.6875rem] text-faint">
-          CrossEFB is a planning aid, not a certified EFB. Confirm currency with official sources before flight.
+          Beta. Not for flight and not a certified EFB. Confirm charts, weather, and NOTAMs with official sources.
         </p>
       </div>
     </div>

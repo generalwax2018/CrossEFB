@@ -40,5 +40,5 @@ before you leave the ground (Plan → Offline).
 - The plugin was compile-checked against the Capacitor 8.5.3 API and `npm run setup`
   was tested, but the full Gradle/APK build needs Android Studio. If Gradle asks to
   upgrade a version on first open, accept it.
-- Not a certified EFB or traffic system. See and avoid.
+- Beta. Not for flight. Not a certified EFB or traffic system. See and avoid.
 - This shell does not file flight plans. CrossEFB only copies a draft. The pilot files it at 1800wxbrief.com. See the flight-plan section in the repository README.

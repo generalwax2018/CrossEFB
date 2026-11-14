@@ -102,8 +102,9 @@ export function BrandMark() {
         <div className="text-[0.95rem] font-bold tracking-tight">
           Cross<span className="text-amber">EFB</span>
         </div>
-        <div className="mt-0.5 text-[0.625rem] font-medium tracking-widest text-faint uppercase">Planning aid</div>
+        <div className="mt-0.5 text-[0.625rem] font-medium tracking-widest text-faint uppercase">Beta · not for flight</div>
       </div>
+      <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[0.625rem] font-semibold tracking-wide text-warn uppercase lg:hidden">Not for flight</span>
     </div>
   );
 }
@@ -1079,7 +1080,7 @@ export function PlanPanel() {
       <SyncPanel />
       <DataBackup />
       <p className="text-xs leading-relaxed text-faint">
-        Planning aid only. Not a certified EFB. Check official charts, weather, and NOTAMs.
+        Beta. Not for flight. Not a certified EFB. Check official charts, weather, and NOTAMs.
       </p>
     </div>
   );

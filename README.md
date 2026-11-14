@@ -1,8 +1,6 @@
 # CrossEFB
 
-Electronic flight bag for Android, PC, and Chromebook. It runs in the browser, installs on the home screen, and has an optional Android shell for ADS-B. ForeFlight stays on Apple.
-
-This is **not a certified EFB** and not a navigation GPS. Do not use it as a sole source for navigation. Check the official chart, the weather, and the NOTAMs before anyone flies.
+Electronic flight bag for a computer browser, in **beta**. It is a planning aid. It is **not for flight**. It is not a certified EFB and not a navigation GPS. Do not use it in the airplane, and do not use it as a sole source. Check the official chart, the weather, and the NOTAMs before anyone flies. A phone browser can open it, but there is no store app yet. An optional Android shell for ADS-B is in `android-shell/`.
 
 ## What it does
 

@@ -144,7 +144,7 @@ function Sheet({
     >
       <header className="flex items-start justify-between gap-3 border-b border-line pb-4">
         <div className="min-w-0">
-          <p className="eyebrow text-amber">CrossEFB · Planning aid</p>
+          <p className="eyebrow text-amber">CrossEFB · Beta · not for flight</p>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h2>
           <p className="mt-1 truncate font-mono text-xs text-muted">
             <span className="text-fg">{aircraft.tail}</span> · {aircraft.name} · {route.join(" › ") || "No route"}
