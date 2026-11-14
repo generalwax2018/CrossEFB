@@ -22,6 +22,7 @@ import { useNotams } from "@/lib/efb/use-notams";
 import { newSyncCode, normalizeCode } from "@/lib/efb/sync";
 import { resetSyncRev, useSyncStatus } from "@/lib/efb/sync-engine";
 import { fmtMin, fmtNm, haversineNm, hdgText, magCourse, nearestAirports, trueCourse } from "@/lib/efb/nav";
+import { useAdsb } from "@/lib/efb/adsb";
 import { useEfb } from "@/lib/efb/store";
 import { useTrack } from "@/lib/efb/track";
 import type { Airport } from "@/lib/efb/types";
@@ -55,7 +56,10 @@ export function WindModeSwitch() {
             ? `NWS winds aloft at ${cruiseFt.toLocaleString()} ft, valid ${winds.valid}${winds.forUse ? ` (use ${winds.forUse})` : ""}${
                 winds.stale ? " · last copy" : ""
               }. Each leg uses the nearest stations.`
-            : "Loading winds aloft… legs use the manual wind until they arrive."}
+            : "Loading winds aloft… legs use the manual wind until they arrive."}{" "}
+          <a className="underline" href="https://aviationweather.gov/gfa/" target="_blank" rel="noreferrer">
+            Official GFA wind chart
+          </a>
         </p>
       )}
     </div>
@@ -419,16 +423,21 @@ export function LayerToggles() {
   const showGlide = useEfb((s) => s.showGlide);
   const showRadar = useEfb((s) => s.showRadar);
   const showTraffic = useEfb((s) => s.showTraffic);
+  const showTerrain = useEfb((s) => s.showTerrain);
+  const showAhead = useEfb((s) => s.showAhead);
   const showAdvisories = useEfb((s) => s.showAdvisories);
   const setShowAdvisories = useEfb((s) => s.setShowAdvisories);
   const setLayer = useEfb((s) => s.setLayer);
+  const receiverNote = useAdsb((s) => s.receiverNote);
   const rows: { label: string; sub: string; on: boolean; set: (on: boolean) => void }[] = [
     { label: "TFRs", sub: "FAA temporary flight restrictions", on: showTfrs, set: (on) => setLayer("showTfrs", on) },
     { label: "Airport weather", sub: "Flight category dots from METARs", on: showMetars, set: (on) => setLayer("showMetars", on) },
     { label: "Radar", sub: "NEXRAD composite, refreshed every 5 min", on: showRadar, set: (on) => setLayer("showRadar", on) },
     { label: "Advisories", sub: "G-AIRMET, SIGMET, PIREP", on: showAdvisories, set: setShowAdvisories },
-    { label: "ADS-B traffic", sub: "From a GDL 90 receiver (Android app)", on: showTraffic, set: (on) => setLayer("showTraffic", on) },
-    { label: "Glide range", sub: "No-wind ring while tracking or previewing", on: showGlide, set: (on) => setLayer("showGlide", on) },
+    { label: "ADS-B traffic", sub: "Android shell, or a receiver on this Wi-Fi", on: showTraffic, set: (on) => setLayer("showTraffic", on) },
+    { label: "Glide range", sub: "Uses your wind and terrain height", on: showGlide, set: (on) => setLayer("showGlide", on) },
+    { label: "Terrain tint", sub: "Elevation shading. Not a terrain warning.", on: showTerrain, set: (on) => setLayer("showTerrain", on) },
+    { label: "Terrain ahead", sub: "Wings-level view. Not synthetic vision.", on: showAhead, set: (on) => setLayer("showAhead", on) },
   ];
   return (
     <div className="flex flex-col divide-y divide-line overflow-hidden rounded-[0.75rem] border border-line bg-surface">
@@ -441,6 +450,7 @@ export function LayerToggles() {
           <Toggle on={r.on} onChange={r.set} label={r.label} />
         </div>
       ))}
+      {receiverNote && <p className="px-3 py-2 text-[0.6875rem] leading-relaxed text-muted">{receiverNote}</p>}
     </div>
   );
 }

@@ -2,6 +2,11 @@
 
 const buckets = new Map();
 
+/**
+ * @param {string} key
+ * @param {number} perSec
+ * @param {number} burst
+ */
 function take(key, perSec, burst) {
   const now = Date.now();
   let b = buckets.get(key);
@@ -20,12 +25,17 @@ function take(key, perSec, burst) {
   return true;
 }
 
+/** @param {Headers} headers */
 export function clientIp(headers) {
   const fwd = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   return fwd || headers.get("x-real-ip") || "local";
 }
 
 /** True when this caller should be turned away. */
+/**
+ * @param {string} ip
+ * @param {string} path
+ */
 export function limited(ip, path) {
   const charts = path.startsWith("/api/charts/tile/");
   const proxy = path.startsWith("/api/charts/");

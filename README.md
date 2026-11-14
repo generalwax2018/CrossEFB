@@ -16,12 +16,14 @@ This is **not a certified EFB** and not a navigation GPS. Do not use it as a sol
 - NEXRAD radar, G-AIRMET, SIGMET, and PIREP overlays.
 - TFRs from tfr.faa.gov, drawn on the chart and checked against the route.
 - NOTAMs only if the person hosting this copy adds their own FAA API keys (see below). There is no key in this repository.
-- Forecast wind is a manual entry. The NWS ended the FB winds-aloft tables on 3 Nov 2026.
+- Forecast wind is typed in, or taken from the old FB tables where a region still publishes them. The CONUS tables ended on 3 Nov 2026. The official replacement is the [GFA wind chart](https://aviationweather.gov/gfa/). The nav log copies an ICAO-style plan you paste into [1800wxbrief](https://www.1800wxbrief.com/). This app does not file.
 
 **Flying**
 - GPS track with own-ship, groundspeed, track, altitude, next fix, desired track, distance, and ETE. Screen stays awake.
-- ADS-B traffic and receiver GPS from GDL 90 receivers (Stratux, Sentry, …) through the Android shell in `android-shell/`.
-- No-wind glide range ring and an emergency Nearest list with Direct-To.
+- The phone browser can plan and look at the chart. There is no Play Store app yet. ADS-B on a phone needs the Android shell in `android-shell/`, which you build in Android Studio. A secure website cannot open a receiver on the airplane Wi-Fi.
+- ADS-B traffic and receiver GPS from GDL 90 receivers (Stratux, Sentry, …) through that Android shell. On an insecure page, a Stratux at 192.168.10.1 is read directly.
+- Glide ring uses the wind on the plan and the highest terrain sampled under you. Still an aid, not a terrain warning.
+- A terrain tint and a wings-level view of the ground ahead. Not synthetic vision: there is no pitch or bank.
 
 **Planning and records**
 - Route by search, tap, or typed string; saved plans; your own aircraft profiles.
@@ -30,7 +32,7 @@ This is **not a certified EFB** and not a navigation GPS. Do not use it as a sol
 - End-to-end encrypted sync between devices with a sync code, plus backup/restore to a file.
 - Data sources panel showing the edition or fetch time of every feed.
 
-Not in this app: flight-plan filing (it hands off to 1800wxbrief), terrain/synthetic vision.
+Not in this app: filing a flight plan (paste the copied plan into 1800wxbrief), certified synthetic vision, and a store-installed phone app.
 
 ## Run
 

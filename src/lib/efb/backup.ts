@@ -105,6 +105,8 @@ export type RestoredState = {
   showTfrs?: boolean;
   showMetars?: boolean;
   showGlide?: boolean;
+  showTerrain?: boolean;
+  showAhead?: boolean;
   showAdvisories?: boolean;
   instructor?: boolean;
   plans?: SavedPlan[];
@@ -139,7 +141,7 @@ export function pickBackup(state: Record<string, unknown>): RestoredState {
   if (chartMode) out.chartMode = chartMode;
   const doc = oneOf(state.doc, DOCS);
   if (doc) out.doc = doc;
-  for (const key of ["showRadar", "showTraffic", "showTfrs", "showMetars", "showGlide", "showAdvisories", "instructor"] as const) {
+  for (const key of ["showRadar", "showTraffic", "showTfrs", "showMetars", "showGlide", "showTerrain", "showAhead", "showAdvisories", "instructor"] as const) {
     const v = bool(state[key]);
     if (v !== undefined) out[key] = v;
   }

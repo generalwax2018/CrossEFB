@@ -67,12 +67,14 @@ type EfbState = {
   showTfrs: boolean;
   showMetars: boolean;
   showGlide: boolean;
+  showTerrain: boolean;
+  showAhead: boolean;
   plans: SavedPlan[];
   myAircraft: Aircraft[];
   pilot: PilotRecord;
   nearestOpen: boolean;
   setWindMode: (mode: WindMode) => void;
-  setLayer: (layer: "showTfrs" | "showMetars" | "showGlide" | "showRadar" | "showTraffic", on: boolean) => void;
+  setLayer: (layer: "showTfrs" | "showMetars" | "showGlide" | "showRadar" | "showTraffic" | "showTerrain" | "showAhead", on: boolean) => void;
   savePlan: (name: string) => void;
   loadPlan: (id: string) => void;
   deletePlan: (id: string) => void;
@@ -176,6 +178,8 @@ export const useEfb = create<EfbState>()(
       showTfrs: true,
       showMetars: true,
       showGlide: true,
+      showTerrain: false,
+      showAhead: false,
       plans: [],
       myAircraft: [],
       pilot: defaultPilot,
@@ -489,6 +493,8 @@ export const useEfb = create<EfbState>()(
         showTfrs: s.showTfrs,
         showMetars: s.showMetars,
         showGlide: s.showGlide,
+        showTerrain: s.showTerrain,
+        showAhead: s.showAhead,
         showAdvisories: s.showAdvisories,
         plans: s.plans,
         myAircraft: s.myAircraft,

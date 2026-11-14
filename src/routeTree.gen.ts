@@ -15,6 +15,7 @@ import { Route as ApiAirspaceTfrsRouteImport } from './routes/api/airspace/tfrs'
 import { Route as ApiChartsStatusRouteImport } from './routes/api/charts/status'
 import { Route as ApiPlatesIdentRouteImport } from './routes/api/plates/$ident'
 import { Route as ApiSyncIdRouteImport } from './routes/api/sync/$id'
+import { Route as ApiTerrainGridRouteImport } from './routes/api/terrain/grid'
 import { Route as ApiWxAdvisoriesRouteImport } from './routes/api/wx/advisories'
 import { Route as ApiWxMetarsRouteImport } from './routes/api/wx/metars'
 import { Route as ApiWxWindsRouteImport } from './routes/api/wx/winds'
@@ -50,6 +51,11 @@ const ApiPlatesIdentRoute = ApiPlatesIdentRouteImport.update({
 const ApiSyncIdRoute = ApiSyncIdRouteImport.update({
   id: '/api/sync/$id',
   path: '/api/sync/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTerrainGridRoute = ApiTerrainGridRouteImport.update({
+  id: '/api/terrain/grid',
+  path: '/api/terrain/grid',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiWxAdvisoriesRoute = ApiWxAdvisoriesRouteImport.update({
@@ -90,6 +96,7 @@ export interface FileRoutesByFullPath {
   '/api/charts/status': typeof ApiChartsStatusRoute
   '/api/plates/$ident': typeof ApiPlatesIdentRoute
   '/api/sync/$id': typeof ApiSyncIdRoute
+  '/api/terrain/grid': typeof ApiTerrainGridRoute
   '/api/wx/advisories': typeof ApiWxAdvisoriesRoute
   '/api/wx/metars': typeof ApiWxMetarsRoute
   '/api/wx/winds': typeof ApiWxWindsRoute
@@ -104,6 +111,7 @@ export interface FileRoutesByTo {
   '/api/charts/status': typeof ApiChartsStatusRoute
   '/api/plates/$ident': typeof ApiPlatesIdentRoute
   '/api/sync/$id': typeof ApiSyncIdRoute
+  '/api/terrain/grid': typeof ApiTerrainGridRoute
   '/api/wx/advisories': typeof ApiWxAdvisoriesRoute
   '/api/wx/metars': typeof ApiWxMetarsRoute
   '/api/wx/winds': typeof ApiWxWindsRoute
@@ -119,6 +127,7 @@ export interface FileRoutesById {
   '/api/charts/status': typeof ApiChartsStatusRoute
   '/api/plates/$ident': typeof ApiPlatesIdentRoute
   '/api/sync/$id': typeof ApiSyncIdRoute
+  '/api/terrain/grid': typeof ApiTerrainGridRoute
   '/api/wx/advisories': typeof ApiWxAdvisoriesRoute
   '/api/wx/metars': typeof ApiWxMetarsRoute
   '/api/wx/winds': typeof ApiWxWindsRoute
@@ -135,6 +144,7 @@ export interface FileRouteTypes {
     | '/api/charts/status'
     | '/api/plates/$ident'
     | '/api/sync/$id'
+    | '/api/terrain/grid'
     | '/api/wx/advisories'
     | '/api/wx/metars'
     | '/api/wx/winds'
@@ -149,6 +159,7 @@ export interface FileRouteTypes {
     | '/api/charts/status'
     | '/api/plates/$ident'
     | '/api/sync/$id'
+    | '/api/terrain/grid'
     | '/api/wx/advisories'
     | '/api/wx/metars'
     | '/api/wx/winds'
@@ -163,6 +174,7 @@ export interface FileRouteTypes {
     | '/api/charts/status'
     | '/api/plates/$ident'
     | '/api/sync/$id'
+    | '/api/terrain/grid'
     | '/api/wx/advisories'
     | '/api/wx/metars'
     | '/api/wx/winds'
@@ -178,6 +190,7 @@ export interface RootRouteChildren {
   ApiChartsStatusRoute: typeof ApiChartsStatusRoute
   ApiPlatesIdentRoute: typeof ApiPlatesIdentRoute
   ApiSyncIdRoute: typeof ApiSyncIdRoute
+  ApiTerrainGridRoute: typeof ApiTerrainGridRoute
   ApiWxAdvisoriesRoute: typeof ApiWxAdvisoriesRoute
   ApiWxMetarsRoute: typeof ApiWxMetarsRoute
   ApiWxWindsRoute: typeof ApiWxWindsRoute
@@ -228,6 +241,13 @@ declare module '@tanstack/react-router' {
       path: '/api/sync/$id'
       fullPath: '/api/sync/$id'
       preLoaderRoute: typeof ApiSyncIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/terrain/grid': {
+      id: '/api/terrain/grid'
+      path: '/api/terrain/grid'
+      fullPath: '/api/terrain/grid'
+      preLoaderRoute: typeof ApiTerrainGridRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/wx/advisories': {
@@ -282,6 +302,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiChartsStatusRoute: ApiChartsStatusRoute,
   ApiPlatesIdentRoute: ApiPlatesIdentRoute,
   ApiSyncIdRoute: ApiSyncIdRoute,
+  ApiTerrainGridRoute: ApiTerrainGridRoute,
   ApiWxAdvisoriesRoute: ApiWxAdvisoriesRoute,
   ApiWxMetarsRoute: ApiWxMetarsRoute,
   ApiWxWindsRoute: ApiWxWindsRoute,

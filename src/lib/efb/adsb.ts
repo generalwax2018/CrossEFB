@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { decodeDatagram, hasPosition, type TrafficTarget } from "./gdl90";
+import { stratuxOwnship, stratuxTargets } from "./stratux";
 import { useEfb } from "./store";
 import { useTrack } from "./track";
 
@@ -23,6 +24,7 @@ type AdsbState = {
   ownship: Target | null;
   ownGeoAltFt: number | null;
   targets: Record<string, Target>;
+  receiverNote: string;
   ingest: (bytes: Uint8Array) => void;
   prune: () => void;
 };
@@ -34,6 +36,7 @@ export const useAdsb = create<AdsbState>((set, get) => ({
   ownship: null,
   ownGeoAltFt: null,
   targets: {},
+  receiverNote: "",
   ingest: (bytes) => {
     const now = Date.now();
     const msgs = decodeDatagram(bytes);
@@ -110,6 +113,46 @@ export function AdsbFeed() {
       void plugin.start?.();
     }
 
+    let stopped = false;
+    const pollReceiver = async () => {
+      if (stopped || window.CrossEFB?.native) return;
+      if (location.protocol === "https:") {
+        useAdsb.setState({
+          receiverNote: "A secure page cannot reach a receiver on Wi-Fi. Build the Android shell in the repo and open CrossEFB from the phone.",
+        });
+        return;
+      }
+      try {
+        const [tr, sit] = await Promise.all([
+          fetch("http://192.168.10.1/getTraffic", { signal: AbortSignal.timeout(2000) }),
+          fetch("http://192.168.10.1/getSituation", { signal: AbortSignal.timeout(2000) }),
+        ]);
+        if (!tr.ok) throw new Error(String(tr.status));
+        const now = Date.now();
+        const list = stratuxTargets(await tr.json(), now);
+        const own = sit.ok ? stratuxOwnship(await sit.json(), now) : null;
+        const targets: Record<string, Target> = {};
+        for (const item of list) targets[item.address] = item;
+        useAdsb.setState({
+          connected: true,
+          lastPacket: now,
+          gpsValid: Boolean(own),
+          targets,
+          ownship: own,
+          ownGeoAltFt: own?.altFt ?? null,
+          receiverNote: "",
+        });
+      } catch {
+        if (!useAdsb.getState().connected) {
+          useAdsb.setState({
+            receiverNote: "No Stratux at 192.168.10.1. Join its Wi-Fi, or use the Android shell for other receivers.",
+          });
+        }
+      }
+    };
+    void pollReceiver();
+    const poll = setInterval(() => void pollReceiver(), location.protocol === "https:" ? 60_000 : 2000);
+
     const tick = setInterval(() => {
       useAdsb.getState().prune();
       // Use the receiver's GPS (usually WAAS) when tracking and the device has no fresh fix.
@@ -136,6 +179,8 @@ export function AdsbFeed() {
     }, 1000);
 
     return () => {
+      stopped = true;
+      clearInterval(poll);
       window.removeEventListener("crossefb:gdl90", onEvent);
       remove?.();
       clearInterval(tick);

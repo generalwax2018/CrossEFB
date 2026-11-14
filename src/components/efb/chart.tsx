@@ -5,8 +5,9 @@ import { loadStreetTile, streetTileIds, type StreetGeom } from "@/lib/efb/street
 import { useEfb } from "@/lib/efb/store";
 import { useTrack } from "@/lib/efb/track";
 import { useWeather } from "@/lib/efb/use-weather";
-import { useLive } from "@/lib/efb/live-store";
+import { useLive, useWindLookup } from "@/lib/efb/live-store";
 import { useAdsb } from "@/lib/efb/adsb";
+import { glideRing, offsetNm } from "@/lib/efb/glide";
 import { FAA_LAYERS, RADAR_LAYER, RADAR_META, layerTiles } from "@/lib/efb/layers";
 import { ringContains as tfrContains, type MetarField } from "@/lib/efb/live";
 import type { WxAdvisories, WxArea } from "@/lib/efb/advisories";
@@ -346,6 +347,8 @@ export function Chart() {
   const showMetars = useEfb((s) => s.showMetars);
   const showTfrs = useEfb((s) => s.showTfrs);
   const showGlide = useEfb((s) => s.showGlide);
+  const showTerrain = useEfb((s) => s.showTerrain);
+  const showAhead = useEfb((s) => s.showAhead);
   const metars = useLive((s) => s.metars);
   const tfrs = useLive((s) => s.tfrs);
   const metarKey = [Math.floor(viewSouth), Math.floor(viewWest), Math.ceil(viewNorth), Math.ceil(viewEast)].join(",");
@@ -574,18 +577,61 @@ export function Chart() {
   const ownAlt = adsbOwn?.altFt ?? null;
   const ownPos = live ? { lat: live.lat, lon: live.lon } : adsbOwn ? { lat: adsbOwn.lat, lon: adsbOwn.lon } : null;
 
-  // No-wind glide range: height above the nearest field times the glide ratio.
+  // Glide ring: height above the highest sampled terrain, drifted by the plan wind.
   const glideRatio = useEfb((s) => s.aircraft.glide ?? 9);
   const cruiseFt = useEfb((s) => s.aircraft.cruiseFt);
+  const tas = useEfb((s) => s.aircraft.tas);
+  const manualFrom = useEfb((s) => s.windFrom);
+  const manualKts = useEfb((s) => s.windKts);
+  const windLookup = useWindLookup();
+  const [groundFt, setGroundFt] = useState<number | null>(null);
+  const shipKey = ship ? `${ship.lat.toFixed(2)},${ship.lon.toFixed(2)}` : "";
+  useEffect(() => {
+    if (!showGlide || !ship) return;
+    let cancel = false;
+    const here = ship;
+    const pts = [here, ...[0, 90, 180, 270].map((b) => offsetNm(here.lat, here.lon, b, 3))];
+    const q = pts.map((p) => `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`).join(";");
+    const timer = setTimeout(() => {
+      void fetch(`/api/terrain/grid?pts=${encodeURIComponent(q)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((body: { elevFt?: (number | null)[] } | null) => {
+          if (cancel || !body?.elevFt) return;
+          const nums = body.elevFt.filter((n): n is number => typeof n === "number");
+          setGroundFt(nums.length ? Math.max(...nums) : null);
+        })
+        .catch(() => undefined);
+    }, 350);
+    return () => {
+      cancel = true;
+      clearTimeout(timer);
+    };
+  }, [showGlide, shipKey]);
   const glide = (() => {
     if (!showGlide || !ship || !shipPt) return null;
     const altFt = live ? live.altFt : flying || progressNm > 0 ? cruiseFt : null;
     if (altFt == null) return null;
-    const ground = nearestAirports(ship.lat, ship.lon, 1)[0]?.airport.elev ?? 0;
-    const agl = altFt - ground;
-    if (agl < 300) return null;
-    const nm = (agl * glideRatio) / 6076;
-    return { nm, px: nm * pxPerNm };
+    const field = nearestAirports(ship.lat, ship.lon, 1)[0]?.airport.elev ?? 0;
+    const forecast = windLookup?.(ship.lat, ship.lon);
+    const ring = glideRing({
+      altFt,
+      groundFt: groundFt ?? field,
+      ratio: glideRatio,
+      windFromDeg: forecast?.dir ?? manualFrom,
+      windKt: forecast?.spd ?? manualKts,
+      glideKt: Math.max(50, Math.round((tas || 100) * 0.62)),
+    });
+    if (!ring) return null;
+    const blow = (ring.blowToDeg * Math.PI) / 180;
+    const driftPx = ring.driftNm * pxPerNm;
+    return {
+      ...ring,
+      px: ring.nm * pxPerNm,
+      cx: shipPt.x + Math.sin(blow) * driftPx,
+      cy: shipPt.y - Math.cos(blow) * driftPx,
+      terrain: groundFt != null,
+      wind: `${String(Math.round(forecast?.dir ?? manualFrom)).padStart(3, "0")}/${Math.round(forecast?.spd ?? manualKts)}`,
+    };
   })();
 
   const scaleNm = pxPerNm > 8 ? 5 : pxPerNm > 2 ? 10 : 30;
@@ -674,6 +720,7 @@ export function Chart() {
         />
       )}
       {showRadar && <RasterCanvas w={w} h={h} scale={streetScale} tx={streetTx} ty={streetTy} images={raster.radar} className="radar-tiles" />}
+      <TerrainShade show={showTerrain} lat={lat} lon={lon} w={w} h={h} pxPerNm={pxPerNm} />
       <svg
         ref={svgRef}
         className="relative z-10 h-full w-full touch-none"
@@ -1164,11 +1211,11 @@ export function Chart() {
           </g>
         )}
 
-        {glide && shipPt && (
+        {glide && (
           <g pointerEvents="none">
             <circle
-              cx={shipPt.x}
-              cy={shipPt.y}
+              cx={glide.cx}
+              cy={glide.cy}
               r={glide.px}
               fill="var(--chart-own)"
               fillOpacity={0.05}
@@ -1177,8 +1224,8 @@ export function Chart() {
               strokeDasharray="8 5"
             />
             <text
-              x={shipPt.x}
-              y={shipPt.y - glide.px - 6}
+              x={glide.cx}
+              y={glide.cy - glide.px - 6}
               textAnchor="middle"
               fill="var(--chart-own)"
               stroke="var(--chart-paper)"
@@ -1187,7 +1234,7 @@ export function Chart() {
               fontSize={11}
               fontFamily="IBM Plex Mono, ui-monospace, monospace"
             >
-              {`GLIDE ${glide.nm.toFixed(1)} NM · no wind · field elev, not terrain`}
+              {`GLIDE ${glide.nm.toFixed(1)} NM · wind ${glide.wind} · ${glide.terrain ? "terrain" : "field elev"}`}
             </text>
           </g>
         )}
@@ -1269,6 +1316,14 @@ export function Chart() {
           </span>
         )}
       </div>
+      {showAhead && ship && (
+        <AheadPanel
+          lat={ship.lat}
+          lon={ship.lon}
+          track={ship.track ?? 0}
+          altFt={live?.altFt ?? cruiseFt}
+        />
+      )}
     </div>
   );
 }
@@ -1279,6 +1334,133 @@ function StatusChip({ tone, children }: { tone: "ok" | "wait"; children: ReactNo
       <span className={`size-1.5 shrink-0 rounded-full ${tone === "ok" ? "bg-good" : "animate-pulse bg-warn"}`} />
       <span className="truncate">{children}</span>
     </span>
+  );
+}
+
+function shade(ft: number): string {
+  const t = Math.max(0, Math.min(1, ft / 11000));
+  const r = Math.round(80 + t * 150);
+  const g = Math.round(130 - t * 80);
+  const b = Math.round(70 - t * 40);
+  return `rgba(${r},${Math.max(40, g)},${Math.max(20, b)},0.42)`;
+}
+
+/** Hypsometric tint from free elevation tiles. Sits on the chart, under the symbols. */
+function TerrainShade({ show, lat, lon, w, h, pxPerNm }: { show: boolean; lat: number; lon: number; w: number; h: number; pxPerNm: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    if (!show || w < 10 || h < 10) return;
+    let cancel = false;
+    const cols = 16;
+    const rows = 10;
+    const latSpan = h / pxPerNm / 60;
+    const lonSpan = w / pxPerNm / (60 * Math.cos((lat * Math.PI) / 180));
+    const south = lat - latSpan / 2;
+    const west = lon - lonSpan / 2;
+    const pts: string[] = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const plat = south + ((r + 0.5) / rows) * latSpan;
+        const plon = west + ((c + 0.5) / cols) * lonSpan;
+        pts.push(`${plat.toFixed(3)},${plon.toFixed(3)}`);
+      }
+    }
+    const timer = setTimeout(() => {
+      void fetch(`/api/terrain/grid?pts=${encodeURIComponent(pts.join(";"))}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((body: { elevFt?: (number | null)[] } | null) => {
+          if (cancel || !body?.elevFt || !ref.current) return;
+          const canvas = ref.current;
+          const dpr = Math.min(2, window.devicePixelRatio || 1);
+          canvas.width = Math.round(w * dpr);
+          canvas.height = Math.round(h * dpr);
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          const cw = canvas.width / cols;
+          const ch = canvas.height / rows;
+          body.elevFt.forEach((ft, i) => {
+            if (typeof ft !== "number") return;
+            ctx.fillStyle = shade(ft);
+            ctx.fillRect((i % cols) * cw, Math.floor(i / cols) * ch, cw + 1, ch + 1);
+          });
+        })
+        .catch(() => undefined);
+    }, 450);
+    return () => {
+      cancel = true;
+      clearTimeout(timer);
+    };
+  }, [show, lat, lon, w, h, pxPerNm]);
+  if (!show) return null;
+  return <canvas ref={ref} className="pointer-events-none absolute inset-0 z-[5] h-full w-full" aria-hidden />;
+}
+
+/** Wings-level view of the terrain ahead. Not a certified synthetic-vision system. */
+function AheadPanel({ lat, lon, track, altFt }: { lat: number; lon: number; track: number; altFt: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [note, setNote] = useState("Reading terrain…");
+  useEffect(() => {
+    let cancel = false;
+    const bearings = [-40, -20, 0, 20, 40];
+    const distances = [2, 5, 10, 15];
+    const pts: { lat: number; lon: number }[] = [];
+    for (const b of bearings) for (const nm of distances) pts.push(offsetNm(lat, lon, track + b, nm));
+    const q = pts.map((p) => `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`).join(";");
+    const timer = setTimeout(() => {
+      void fetch(`/api/terrain/grid?pts=${encodeURIComponent(q)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((body: { elevFt?: (number | null)[] } | null) => {
+          if (cancel || !body?.elevFt || !ref.current) return;
+          const canvas = ref.current;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+          const W = canvas.width;
+          const H = canvas.height;
+          ctx.clearRect(0, 0, W, H);
+          const sky = ctx.createLinearGradient(0, 0, 0, H);
+          sky.addColorStop(0, "#16324a");
+          sky.addColorStop(0.55, "#8aa4b5");
+          sky.addColorStop(1, "#c4a574");
+          ctx.fillStyle = sky;
+          ctx.fillRect(0, 0, W, H);
+          ctx.strokeStyle = "rgba(255,255,255,0.7)";
+          ctx.beginPath();
+          ctx.moveTo(0, H * 0.55);
+          ctx.lineTo(W, H * 0.55);
+          ctx.stroke();
+          ctx.beginPath();
+          bearings.forEach((b, i) => {
+            let peak = -90;
+            distances.forEach((nm, d) => {
+              const ft = body.elevFt?.[i * distances.length + d];
+              if (typeof ft !== "number") return;
+              const ang = (Math.atan2((ft - altFt) * 0.3048, nm * 1852) * 180) / Math.PI;
+              peak = Math.max(peak, ang);
+            });
+            const x = ((b + 40) / 80) * W;
+            const y = H * 0.55 - (peak / 12) * (H * 0.4);
+            if (i === 0) ctx.moveTo(x, H);
+            ctx.lineTo(x, y);
+          });
+          ctx.lineTo(W, H);
+          ctx.closePath();
+          ctx.fillStyle = "rgba(90,70,40,0.9)";
+          ctx.fill();
+          setNote("Wings level. No pitch or bank. Not for navigation.");
+        })
+        .catch(() => setNote("Terrain did not load."));
+    }, 400);
+    return () => {
+      cancel = true;
+      clearTimeout(timer);
+    };
+  }, [lat, lon, track, altFt]);
+  return (
+    <div className="absolute bottom-24 left-3 z-20 w-[17rem] max-w-[calc(100%-1.5rem)] overflow-hidden rounded-[0.75rem] border border-line bg-bg/90">
+      <canvas ref={ref} width={320} height={150} className="h-[7.5rem] w-full" />
+      <p className="px-2 py-1 text-[0.625rem] text-muted">{note}</p>
+    </div>
   );
 }
 

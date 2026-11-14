@@ -182,13 +182,17 @@ function NavlogSheet() {
   const f = useFlight();
   const reserveMin = f.night ? 45 : 30;
   const reserveGal = (f.aircraft.burnGph * reserveMin) / 60;
+  const dof = new Date().toISOString().slice(2, 10).replace(/-/g, "");
+  const type = f.aircraft.name.replace(/[^A-Za-z0-9]/g, "").slice(0, 8).toUpperCase() || "ZZZZ";
+  const ete = fmtMin(f.sum.min).replace(":", "");
+  const via = f.route.slice(1, -1).join(" ") || "DCT";
   const plan = [
-    `(FPL-${f.aircraft.tail}-VG`,
-    `-${f.aircraft.name.split(" ").slice(-1)[0]}/L-S`,
+    `(FPL-${f.aircraft.tail.replace(/[^A-Za-z0-9]/g, "").toUpperCase() || "ZZZZZ"}-VG`,
+    `-${type}/L-S`,
     `-${f.route[0] ?? "ZZZZ"}${String(f.departHour).padStart(2, "0")}00`,
-    `-N${String(Math.round(f.aircraft.tas)).padStart(4, "0")}A${String(Math.round(f.aircraft.cruiseFt / 100)).padStart(3, "0")} ${f.route.slice(1, -1).join(" ") || "DCT"}`,
-    `-${f.route[f.route.length - 1] ?? "ZZZZ"}${fmtMin(f.sum.min).replace(":", "")}`,
-    `-DOF/ ${f.aircraft.color} POB/${souls(f.aircraft.stations, f.loads) || 1} RMK/PLANNING AID NOT FILED)`,
+    `-N${String(Math.round(f.aircraft.tas)).padStart(4, "0")}A${String(Math.round(f.aircraft.cruiseFt / 100)).padStart(3, "0")} ${via}`,
+    `-${f.route[f.route.length - 1] ?? "ZZZZ"}${ete}`,
+    `-DOF/${dof} POB/${souls(f.aircraft.stations, f.loads) || 1} RMK/PLANNING AID NOT A FILED FLIGHT PLAN)`,
   ].join("\n");
 
   return (
