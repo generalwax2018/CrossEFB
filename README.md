@@ -16,7 +16,7 @@ This is **not a certified EFB** and not a navigation GPS. Do not use it as a sol
 - NEXRAD radar, G-AIRMET, SIGMET, and PIREP overlays.
 - TFRs from tfr.faa.gov, drawn on the chart and checked against the route.
 - NOTAMs only if the person hosting this copy adds their own FAA API keys (see below). There is no key in this repository.
-- Forecast wind is typed in, or taken from the old FB tables where a region still publishes them. The CONUS tables ended on 3 Nov 2026. The official replacement is the [GFA wind chart](https://aviationweather.gov/gfa/). The nav log copies an ICAO-style plan you paste into [1800wxbrief](https://www.1800wxbrief.com/). This app does not file.
+- Forecast wind is typed in, or taken from the old FB tables where a region still publishes them. The CONUS tables ended on 3 Nov 2026. The official replacement is the [GFA wind chart](https://aviationweather.gov/gfa/). The nav log can copy a draft plan. See [Flight plan filing](#flight-plan-filing). This app does not file.
 
 **Flying**
 - GPS track with own-ship, groundspeed, track, altitude, next fix, desired track, distance, and ETE. Screen stays awake.
@@ -32,7 +32,20 @@ This is **not a certified EFB** and not a navigation GPS. Do not use it as a sol
 - End-to-end encrypted sync between devices with a sync code, plus backup/restore to a file.
 - Data sources panel showing the edition or fetch time of every feed.
 
-Not in this app: filing a flight plan (paste the copied plan into 1800wxbrief), certified synthetic vision, and a store-installed phone app.
+Not in this app: submitting a flight plan to Leidos, certified synthetic vision, and a store-installed phone app. Copy the draft and file it yourself at [1800wxbrief](https://www.1800wxbrief.com/).
+
+## Flight plan filing
+
+CrossEFB does **not** file flight plans. **Copy flight plan** on the nav log writes a draft you paste into [1800wxbrief.com](https://www.1800wxbrief.com/), or read to a briefer at 1-800-WX-BRIEF. That site is the official US flight service, run by Leidos. Filing there is free and needs the pilot's own account. The draft is a head start. It is not a complete plan: fuel on board, aircraft color, the pilot's name and phone, and a real equipment code are still filled in there. The draft says it is not a filed plan.
+
+Leidos will not accept a filing sent by this app. Their web service can file, amend, activate, close, and cancel a plan, but only for a vendor they have approved. That is not set up. It would take all of the following, and none of them are in the repository:
+
+1. The person who hosts CrossEFB signs Leidos's terms and receives a vendor username and password. Those stay on the server. They are never committed.
+2. The pilot has a free 1800wxbrief account.
+3. The pilot turns this app on under Account, then Service Provider Authorization. Leidos rejects the request if they have not.
+4. The app sends that pilot's username plus a complete plan. A domestic plan is enough inside the US. An ICAO plan is required when the flight leaves US airspace, goes over water, or needs performance-based routing.
+
+Until that vendor account exists, do not add a File button that pretends to submit.
 
 ## Run
 

@@ -41,3 +41,4 @@ before you leave the ground (Plan → Offline).
   was tested, but the full Gradle/APK build needs Android Studio. If Gradle asks to
   upgrade a version on first open, accept it.
 - Not a certified EFB or traffic system. See and avoid.
+- This shell does not file flight plans. CrossEFB only copies a draft. The pilot files it at 1800wxbrief.com. See the flight-plan section in the repository README.

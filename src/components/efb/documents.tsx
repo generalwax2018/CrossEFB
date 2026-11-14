@@ -1084,7 +1084,7 @@ function FilingHelper({ plan }: { plan: string }) {
       >
         File and brief at 1800wxbrief <ExternalLink className="size-3.5" />
       </a>
-      <span className="text-[0.6875rem] text-faint">CrossEFB does not file. Paste the plan and get an official briefing.</span>
+      <span className="text-[0.6875rem] text-faint">CrossEFB does not file. Leidos has not approved this app. Paste the draft at 1800wxbrief and finish fuel, color, and pilot phone there.</span>
     </div>
   );
 }
