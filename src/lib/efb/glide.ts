@@ -25,3 +25,24 @@ export function offsetNm(lat: number, lon: number, bearingDeg: number, nm: numbe
   const dLon = cos === 0 ? 0 : (nm * Math.sin(rad)) / (60 * cos);
   return { lat: lat + dLat, lon: lon + dLon };
 }
+
+export type TerrainSample = { nm: number; elevFt: number };
+
+/**
+ * Nearest sample where the ground, plus a margin, is above the descending
+ * glide path. A missed ridge between samples will not show up.
+ */
+export function firstTerrainConflict(
+  altFt: number,
+  ratio: number,
+  samples: TerrainSample[],
+  marginFt = 200,
+): { nm: number; elevFt: number; pathFt: number } | null {
+  if (!(ratio > 0)) return null;
+  const hits = samples
+    .filter((s) => s.nm > 0.2 && Number.isFinite(s.elevFt))
+    .map((s) => ({ ...s, pathFt: Math.round(altFt - (s.nm * 6076) / ratio) }))
+    .filter((s) => s.elevFt + marginFt > s.pathFt)
+    .sort((a, b) => a.nm - b.nm);
+  return hits[0] ?? null;
+}

@@ -19,6 +19,7 @@ import { useWeather } from "./panels";
 import { useLegs, useLive } from "@/lib/efb/live-store";
 import { tfrsOnRoute } from "@/lib/efb/live";
 import { currency, goNoGo, logbookCsv } from "@/lib/efb/brief";
+import { useTrack } from "@/lib/efb/track";
 import { favoredRunway } from "@/lib/efb/docs";
 import { download, NotamList } from "./extras";
 import { useNotams } from "@/lib/efb/use-notams";
@@ -631,6 +632,8 @@ function LogSheet() {
   const instructor = useEfb((s) => s.instructor);
   const students = useEfb((s) => s.students);
   const draft = useEfb((s) => s.draftLog);
+  const draftTracked = useEfb((s) => s.draftTracked);
+  const crumbs = useTrack((s) => s.crumbs.length);
   const add = useEfb((s) => s.addLog);
   const update = useEfb((s) => s.updateLog);
   const remove = useEfb((s) => s.removeLog);
@@ -651,10 +654,11 @@ function LogSheet() {
         <div className="flex flex-wrap gap-2">
           <Btn onClick={add}>Add a line</Btn>
           <Btn variant="primary" onClick={draft}>Add this flight</Btn>
+          <Btn onClick={draftTracked} disabled={crumbs < 2}>Add tracked hours</Btn>
         </div>
       </div>
       <p className="text-sm text-muted">
-        Working copy only. Print it and write on the blank lines, or export the CSV into your own book. CrossEFB does not keep the official log. Night passenger currency counts only full-stop landings from one hour after sunset until one hour before sunrise. Civil-night landings stay in the night column and do not count.
+        Working copy only. Print it and write on the blank lines, or export the CSV into your own book. CrossEFB does not keep the official log. Add tracked hours fills the time from this session's GPS and leaves the landings at zero. Currency uses only the landings and dates you enter. Night passenger currency counts only full-stop landings from one hour after sunset until one hour before sunrise. Civil-night landings stay in the night column and do not count.
       </p>
       <div className="max-w-full overflow-x-auto">
         <table className="w-full min-w-[980px] border-collapse text-left text-xs">

@@ -21,6 +21,7 @@ import { PlatesSheet } from "./plates-viewer";
 import { LiveFeeds, useLive } from "@/lib/efb/live-store";
 import { AdsbFeed } from "@/lib/efb/adsb";
 import { SyncEngine } from "@/lib/efb/sync-engine";
+import { AttitudeFeed } from "./attitude";
 import { OwnShip } from "./ownship";
 import { useEfb } from "@/lib/efb/store";
 
@@ -83,6 +84,7 @@ export function Shell() {
   return (
     <main className="relative flex h-dvh flex-col overflow-hidden bg-bg text-fg">
       <OwnShip />
+      <AttitudeFeed />
       <LiveFeeds />
       <AdsbFeed />
       <SyncEngine />

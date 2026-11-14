@@ -435,9 +435,9 @@ export function LayerToggles() {
     { label: "Radar", sub: "NEXRAD composite, refreshed every 5 min", on: showRadar, set: (on) => setLayer("showRadar", on) },
     { label: "Advisories", sub: "G-AIRMET, SIGMET, PIREP", on: showAdvisories, set: setShowAdvisories },
     { label: "ADS-B traffic", sub: "Android shell, or a receiver on this Wi-Fi", on: showTraffic, set: (on) => setLayer("showTraffic", on) },
-    { label: "Glide range", sub: "Uses your wind and terrain height", on: showGlide, set: (on) => setLayer("showGlide", on) },
+    { label: "Glide range", sub: "An aid only. Not a terrain warning.", on: showGlide, set: (on) => setLayer("showGlide", on) },
     { label: "Terrain tint", sub: "Elevation shading. Not a terrain warning.", on: showTerrain, set: (on) => setLayer("showTerrain", on) },
-    { label: "Terrain ahead", sub: "Wings-level view. Not synthetic vision.", on: showAhead, set: (on) => setLayer("showAhead", on) },
+    { label: "Terrain ahead", sub: "Phone tilt when allowed. Not synthetic vision.", on: showAhead, set: (on) => setLayer("showAhead", on) },
   ];
   return (
     <div className="flex flex-col divide-y divide-line overflow-hidden rounded-[0.75rem] border border-line bg-surface">
@@ -991,7 +991,7 @@ export function DataSourcesSheet() {
           ))}
         </ul>
         <p className="border-t border-line px-4 py-2 text-[0.6875rem] text-faint">
-          Beta. Not for flight and not a certified EFB. Confirm charts, weather, and NOTAMs with official sources.
+          Beta. Not for flight and not a certified EFB. The forward terrain view assumes wings-level flight (no pitch or bank, and not synthetic vision). The glide ring is not a terrain warning. Logbook and currency use only what you type.
         </p>
       </div>
     </div>

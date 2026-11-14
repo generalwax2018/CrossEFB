@@ -21,7 +21,9 @@ Electronic flight bag for a computer browser, in **beta**. It is a planning aid.
 - The phone browser can plan and look at the chart. There is no Play Store app yet. ADS-B on a phone needs the Android shell in `android-shell/`, which you build in Android Studio. A secure website cannot open a receiver on the airplane Wi-Fi.
 - ADS-B traffic and receiver GPS from GDL 90 receivers (Stratux, Sentry, …) through that Android shell. On an insecure page, a Stratux at 192.168.10.1 is read directly.
 - Glide ring uses the wind on the plan and the highest terrain sampled under you. Still an aid, not a terrain warning.
-- A terrain tint and a wings-level view of the ground ahead. Not synthetic vision: there is no pitch or bank.
+- A terrain tint and a forward view. On a phone, tilt follows the device after you tap Use phone tilt and Set level. A computer stays wings level. It is not synthetic vision.
+- The glide ring is an aid. If a terrain sample ahead is above the glide path, the chart says so. Ridges between samples are missed. It is not a terrain warning system.
+- Logbook and currency use what you type. A tracked flight can fill the hours and leave the landings at zero.
 
 **Planning and records**
 - Route by search, tap, or typed string; saved plans; your own aircraft profiles.

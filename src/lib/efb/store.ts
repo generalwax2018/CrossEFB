@@ -2,8 +2,10 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { DEFAULT_LOADS, isCustomId, profileById, resolveAircraft } from "./aircraft";
 import { getAirport } from "./airports";
-import { buildLegs, totals } from "./nav";
+import { buildLegs, nearestAirports, totals } from "./nav";
 import { isLocalNight } from "./sun";
+import { trackHours } from "./track-log";
+import { useTrack } from "./track";
 import { pickBackup } from "./backup";
 import type { BaseChart } from "./layers";
 import type { Aircraft, ChartMode, DocId, FratManual, LogEntry, PilotRecord, Rental, SavedPlan, Student, Tab, WindMode } from "./types";
@@ -143,6 +145,7 @@ type EfbState = {
   toggleCheck: (id: string) => void;
   resetChecks: () => void;
   draftLog: () => void;
+  draftTracked: () => void;
   addLog: () => void;
   updateLog: (id: string, patch: Partial<LogEntry>) => void;
   removeLog: (id: string) => void;
@@ -422,6 +425,36 @@ export const useEfb = create<EfbState>()(
             studentId: student?.id ?? "",
             student: student?.name ?? "",
             dual: student ? hours : 0,
+            ground: 0,
+          };
+          return { logbook: [entry, ...s.logbook], doc: "log" };
+        }),
+      draftTracked: () =>
+        set((s) => {
+          const summary = trackHours(useTrack.getState().crumbs);
+          if (!summary) return {};
+          const fromHit = nearestAirports(summary.from.lat, summary.from.lon, 1)[0];
+          const toHit = nearestAirports(summary.to.lat, summary.to.lon, 1)[0];
+          const aircraft = resolveAircraft(s.aircraft);
+          const student = s.instructor ? s.students.find((st) => st.id === s.activeStudent) : undefined;
+          const night = isLocalNight(summary.from.lat, summary.from.lon, new Date(summary.from.t).getHours(), new Date(summary.from.t));
+          const entry: LogEntry = {
+            id: `log-${Date.now()}`,
+            date: new Date(summary.from.t).toISOString().slice(0, 10),
+            from: fromHit && fromHit.nm < 15 ? fromHit.airport.icao : "",
+            to: toHit && toHit.nm < 15 ? toHit.airport.icao : "",
+            total: summary.hours,
+            night: night ? summary.hours : 0,
+            approaches: 0,
+            dayLdg: 0,
+            nightLdg: 0,
+            nightFullStop: 0,
+            pic: s.rental.pic,
+            remarks: "GPS track. Enter the landings yourself. Currency ignores this line until you do.",
+            tail: aircraft.tail,
+            studentId: student?.id ?? "",
+            student: student?.name ?? "",
+            dual: student ? summary.hours : 0,
             ground: 0,
           };
           return { logbook: [entry, ...s.logbook], doc: "log" };

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { glideRing, offsetNm } from "./glide.ts";
+import { firstTerrainConflict, glideRing, offsetNm } from "./glide.ts";
 
 test("still-air glide distance", () => {
   const g = glideRing({ altFt: 9000, groundFt: 3000, ratio: 9, windFromDeg: 0, windKt: 0, glideKt: 70 });
@@ -24,4 +24,18 @@ test("offset moves north", () => {
   const p = offsetNm(40, -105, 0, 60);
   assert.ok(Math.abs(p.lat - 41) < 0.001);
   assert.ok(Math.abs(p.lon + 105) < 0.001);
+});
+
+test("terrain above the glide path is the nearest conflict", () => {
+  const hit = firstTerrainConflict(9000, 9, [
+    { nm: 6, elevFt: 4000 },
+    { nm: 2, elevFt: 8500 },
+  ]);
+  assert.ok(hit);
+  assert.equal(hit.nm, 2);
+  assert.ok(hit.pathFt < 8500);
+});
+
+test("clear terrain is not a conflict", () => {
+  assert.equal(firstTerrainConflict(9000, 9, [{ nm: 2, elevFt: 5000 }]), null);
 });

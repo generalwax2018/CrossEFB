@@ -3,11 +3,12 @@ import { airportsNear, getAirport, ringsNm } from "@/lib/efb/airports";
 import { nearestAirports, positionAlong, routeDistance } from "@/lib/efb/nav";
 import { loadStreetTile, streetTileIds, type StreetGeom } from "@/lib/efb/streets";
 import { useEfb } from "@/lib/efb/store";
+import { enableTilt } from "./attitude";
 import { useTrack } from "@/lib/efb/track";
 import { useWeather } from "@/lib/efb/use-weather";
 import { useLive, useWindLookup } from "@/lib/efb/live-store";
 import { useAdsb } from "@/lib/efb/adsb";
-import { glideRing, offsetNm } from "@/lib/efb/glide";
+import { firstTerrainConflict, glideRing, offsetNm } from "@/lib/efb/glide";
 import { FAA_LAYERS, RADAR_LAYER, RADAR_META, layerTiles } from "@/lib/efb/layers";
 import { ringContains as tfrContains, type MetarField } from "@/lib/efb/live";
 import type { WxAdvisories, WxArea } from "@/lib/efb/advisories";
@@ -585,20 +586,29 @@ export function Chart() {
   const manualKts = useEfb((s) => s.windKts);
   const windLookup = useWindLookup();
   const [groundFt, setGroundFt] = useState<number | null>(null);
-  const shipKey = ship ? `${ship.lat.toFixed(2)},${ship.lon.toFixed(2)}` : "";
+  const [ahead, setAhead] = useState<{ nm: number; elevFt: number }[]>([]);
+  const shipKey = ship ? `${ship.lat.toFixed(2)},${ship.lon.toFixed(2)},${Math.round(ship.track ?? 0)}` : "";
   useEffect(() => {
     if (!showGlide || !ship) return;
     let cancel = false;
     const here = ship;
-    const pts = [here, ...[0, 90, 180, 270].map((b) => offsetNm(here.lat, here.lon, b, 3))];
-    const q = pts.map((p) => `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`).join(";");
+    const bearing = here.track ?? 0;
+    const near = [here, ...[0, 90, 180, 270].map((b) => offsetNm(here.lat, here.lon, b, 3))];
+    const distances = [1, 2, 4, 6, 8];
+    const far = distances.map((nm) => offsetNm(here.lat, here.lon, bearing, nm));
+    const q = [...near, ...far].map((p) => `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`).join(";");
     const timer = setTimeout(() => {
       void fetch(`/api/terrain/grid?pts=${encodeURIComponent(q)}`)
         .then((res) => (res.ok ? res.json() : null))
         .then((body: { elevFt?: (number | null)[] } | null) => {
           if (cancel || !body?.elevFt) return;
-          const nums = body.elevFt.filter((n): n is number => typeof n === "number");
+          const nums = body.elevFt.slice(0, near.length).filter((n): n is number => typeof n === "number");
           setGroundFt(nums.length ? Math.max(...nums) : null);
+          setAhead(
+            distances
+              .map((nm, i) => ({ nm, elevFt: body.elevFt?.[near.length + i] }))
+              .filter((s): s is { nm: number; elevFt: number } => typeof s.elevFt === "number"),
+          );
         })
         .catch(() => undefined);
     }, 350);
@@ -631,6 +641,7 @@ export function Chart() {
       cy: shipPt.y - Math.cos(blow) * driftPx,
       terrain: groundFt != null,
       wind: `${String(Math.round(forecast?.dir ?? manualFrom)).padStart(3, "0")}/${Math.round(forecast?.spd ?? manualKts)}`,
+      conflict: firstTerrainConflict(altFt, glideRatio, ahead),
     };
   })();
 
@@ -1236,6 +1247,21 @@ export function Chart() {
             >
               {`GLIDE ${glide.nm.toFixed(1)} NM · wind ${glide.wind} · ${glide.terrain ? "terrain" : "field elev"}`}
             </text>
+            {glide.conflict && (
+              <text
+                x={glide.cx}
+                y={glide.cy - glide.px + 14}
+                textAnchor="middle"
+                fill="var(--color-bad)"
+                stroke="var(--chart-paper)"
+                strokeWidth={3}
+                paintOrder="stroke"
+                fontSize={11}
+                fontFamily="IBM Plex Mono, ui-monospace, monospace"
+              >
+                {`SAMPLE ${glide.conflict.nm} NM AHEAD IS ABOVE THE GLIDE PATH · NOT A TERRAIN WARNING`}
+              </text>
+            )}
           </g>
         )}
 
@@ -1399,7 +1425,10 @@ function TerrainShade({ show, lat, lon, w, h, pxPerNm }: { show: boolean; lat: n
 /** Wings-level view of the terrain ahead. Not a certified synthetic-vision system. */
 function AheadPanel({ lat, lon, track, altFt }: { lat: number; lon: number; track: number; altFt: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const [note, setNote] = useState("Reading terrain…");
+  const pitch = useTrack((s) => s.pitch);
+  const roll = useTrack((s) => s.roll);
+  const setLevel = useTrack((s) => s.setLevel);
+  const tilted = pitch != null && roll != null;
   useEffect(() => {
     let cancel = false;
     const bearings = [-40, -20, 0, 20, 40];
@@ -1447,9 +1476,8 @@ function AheadPanel({ lat, lon, track, altFt }: { lat: number; lon: number; trac
           ctx.closePath();
           ctx.fillStyle = "rgba(90,70,40,0.9)";
           ctx.fill();
-          setNote("Wings level. No pitch or bank. Not for navigation.");
         })
-        .catch(() => setNote("Terrain did not load."));
+        .catch(() => undefined);
     }, 400);
     return () => {
       cancel = true;
@@ -1458,8 +1486,28 @@ function AheadPanel({ lat, lon, track, altFt }: { lat: number; lon: number; trac
   }, [lat, lon, track, altFt]);
   return (
     <div className="absolute bottom-24 left-3 z-20 w-[17rem] max-w-[calc(100%-1.5rem)] overflow-hidden rounded-[0.75rem] border border-line bg-bg/90">
-      <canvas ref={ref} width={320} height={150} className="h-[7.5rem] w-full" />
-      <p className="px-2 py-1 text-[0.625rem] text-muted">{note}</p>
+      <div className="overflow-hidden">
+        <canvas
+          ref={ref}
+          width={320}
+          height={150}
+          className="h-[7.5rem] w-full"
+          style={{ transform: `rotate(${-(roll ?? 0)}deg) translateY(${((pitch ?? 0) / 25) * 24}px)` }}
+        />
+      </div>
+      <p className="px-2 pt-1 text-[0.625rem] leading-relaxed text-muted">
+        {tilted
+          ? "Using this phone's tilt, relative to Set level. Not a certified attitude indicator or synthetic vision."
+          : "No tilt from this device, so the view stays wings level. Not synthetic vision."}
+      </p>
+      <div className="flex gap-2 px-2 py-1">
+        <button type="button" className="text-[0.625rem] font-medium text-amber underline" onClick={() => void enableTilt()}>
+          Use phone tilt
+        </button>
+        <button type="button" className="text-[0.625rem] font-medium text-amber underline disabled:opacity-40" disabled={!tilted} onClick={() => setLevel()}>
+          Set level
+        </button>
+      </div>
     </div>
   );
 }
