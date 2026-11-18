@@ -16,7 +16,7 @@ async function loadTile(z: number, x: number, y: number): Promise<Tile> {
   const png = decode(new Uint8Array(await res.arrayBuffer()));
   const tile: Tile = { data: png.data, width: png.width, height: png.height, channels: png.channels };
   cache.set(key, tile);
-  if (cache.size > 64) {
+  if (cache.size > 160) {
     const oldest = cache.keys().next().value;
     if (oldest) cache.delete(oldest);
   }
@@ -32,12 +32,22 @@ export async function elevations(points: { lat: number; lon: number }[]): Promis
       continue;
     }
     try {
-      const t = tileOf(p.lat, p.lon, 8);
-      const img = await loadTile(8, t.x, t.y);
-      const px = Math.min(img.width - 1, Math.floor((t.px / 256) * img.width));
-      const py = Math.min(img.height - 1, Math.floor((t.py / 256) * img.height));
-      const i = (py * img.width + px) * img.channels;
-      out.push(Math.round(terrariumFeet(img.data[i] ?? 0, img.data[i + 1] ?? 0, img.data[i + 2] ?? 0)));
+      // Zoom 10 is about 150 m per pixel. Take the highest of the 3x3 pixels around the
+      // point so peaks and ridges are not averaged away (conservative for terrain checks).
+      const t = tileOf(p.lat, p.lon, 10);
+      const img = await loadTile(10, t.x, t.y);
+      const cx = Math.min(img.width - 1, Math.floor((t.px / 256) * img.width));
+      const cy = Math.min(img.height - 1, Math.floor((t.py / 256) * img.height));
+      let best = -Infinity;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const px = Math.max(0, Math.min(img.width - 1, cx + dx));
+          const py = Math.max(0, Math.min(img.height - 1, cy + dy));
+          const i = (py * img.width + px) * img.channels;
+          best = Math.max(best, terrariumFeet(img.data[i] ?? 0, img.data[i + 1] ?? 0, img.data[i + 2] ?? 0));
+        }
+      }
+      out.push(Math.round(best));
     } catch {
       out.push(null);
     }

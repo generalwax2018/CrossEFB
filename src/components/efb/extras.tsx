@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { getAirport } from "@/lib/efb/airports";
 import { dtppCycle } from "@/lib/efb/plates";
-import { BASE_CHARTS, FAA_LAYERS, RADAR_META, boxTiles, type BaseChart } from "@/lib/efb/layers";
+import { BASE_CHARTS, SECTIONAL_LAYER, FAA_LAYERS, RADAR_META, boxTiles, type BaseChart } from "@/lib/efb/layers";
 import { runwayFeet } from "@/lib/efb/docs";
 import { useLive } from "@/lib/efb/live-store";
 import { useNotams } from "@/lib/efb/use-notams";
@@ -53,7 +53,7 @@ export function WindModeSwitch() {
           {winds.note
             ? winds.note
             : winds.fetchedAt
-            ? `NWS winds aloft at ${cruiseFt.toLocaleString()} ft, valid ${winds.valid}${winds.forUse ? ` (use ${winds.forUse})` : ""}${
+            ? `GFS winds aloft at ${cruiseFt.toLocaleString()} ft for ${winds.valid} (Open-Meteo)${
                 winds.stale ? " · last copy" : ""
               }. Each leg uses the nearest stations.`
             : "Loading winds aloft… legs use the manual wind until they arrive."}{" "}
@@ -216,34 +216,57 @@ async function warm(urls: string[], onProgress: (done: number, ok: number) => vo
   const worker = async () => {
     while (i < urls.length && !stop.current) {
       const url = urls[i++];
-      try {
-        const cross = !url.startsWith("/");
-        const res = await fetch(url, cross ? { mode: "no-cors" } : undefined);
-        if (res.ok || res.type === "opaque") ok++;
-      } catch {
-        /* keep going */
+      // The server rate-limits tile requests; on 429 wait as told and try again.
+      for (let attempt = 0; attempt < 5 && !stop.current; attempt++) {
+        try {
+          const cross = !url.startsWith("/");
+          const res = await fetch(url, cross ? { mode: "no-cors" } : undefined);
+          if (res.status === 429) {
+            const wait = Math.min(30, Number(res.headers.get("retry-after")) || 2 * (attempt + 1));
+            await new Promise((r) => setTimeout(r, wait * 1000));
+            continue;
+          }
+          if (res.ok || res.type === "opaque") ok++;
+        } catch {
+          /* keep going */
+        }
+        break;
       }
       done++;
       if (done % 5 === 0 || done === urls.length) onProgress(done, ok);
     }
   };
-  await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
+  await Promise.all([worker(), worker(), worker(), worker()]);
   return { done, ok };
 }
 
-function sectionalUrls(z: number[], box: { s: number; w: number; n: number; e: number }, cap: number) {
-  return z.flatMap((zz) => boxTiles(zz, box.s, box.w, box.n, box.e, cap).map((t) => `/api/charts/tile/${t.z}/${t.x}/${t.y}`));
+/** True when this server has its own sectional sheets for the box; otherwise the FAA tile service is used. */
+async function serverHasSectional(box: { s: number; w: number; n: number; e: number }): Promise<boolean> {
+  try {
+    const q = new URLSearchParams({ south: String(box.s), west: String(box.w), north: String(box.n), east: String(box.e) });
+    const b = (await fetch(`/api/charts/status?${q}`).then((r) => r.json())) as { sheets?: unknown[] };
+    return Array.isArray(b.sheets) && b.sheets.length > 0;
+  } catch {
+    return false;
+  }
 }
 
-function regionUrls(base: BaseChart, box: { s: number; w: number; n: number; e: number }): string[] {
-  if (base === "sectional") return sectionalUrls([7, 8, 9, 10, 11], box, 3000).slice(0, 4000);
+function sectionalUrls(z: number[], box: { s: number; w: number; n: number; e: number }, cap: number, own = true) {
+  const zs = own ? z : z.filter((zz) => zz >= SECTIONAL_LAYER.minZ);
+  return zs.flatMap((zz) =>
+    boxTiles(zz, box.s, box.w, box.n, box.e, cap).map((t) => (own ? `/api/charts/tile/${t.z}/${t.x}/${t.y}` : SECTIONAL_LAYER.url(t.z, t.x, t.y))),
+  );
+}
+
+function regionUrls(base: BaseChart, box: { s: number; w: number; n: number; e: number }, own: boolean): string[] {
+  if (base === "sectional") return sectionalUrls([7, 8, 9, 10, 11], box, 3000, own).slice(0, 4000);
   const layer = FAA_LAYERS[base];
   const out: string[] = [];
   for (let z = layer.minZ; z <= layer.maxZ; z++) {
     for (const t of boxTiles(z, box.s, box.w, box.n, box.e, 4000)) out.push(layer.url(t.z, t.x, t.y));
     if (out.length > 4000) break;
   }
-  if (base === "tac") out.push(...sectionalUrls([8, 9, 10, 11], box, 2000));
+  if (base === "tac") out.push(...sectionalUrls([8, 9, 10, 11], box, 2000, own));
   return out.slice(0, 5000);
 }
 
@@ -262,7 +285,21 @@ export function OfflineSave() {
   };
 
   const routeJob = async () => {
-    const tiles = tilesForRoute(route).map((k) => `/api/charts/tile/${k}`);
+    const pts = route.map((id) => getAirport(id)).filter((a): a is Airport => Boolean(a));
+    const own = pts.length
+      ? await serverHasSectional({
+          s: Math.min(...pts.map((p) => p.lat)),
+          n: Math.max(...pts.map((p) => p.lat)),
+          w: Math.min(...pts.map((p) => p.lon)),
+          e: Math.max(...pts.map((p) => p.lon)),
+        })
+      : true;
+    const tiles = tilesForRoute(route)
+      .filter((k) => own || Number(k.split("/")[0]) >= SECTIONAL_LAYER.minZ)
+      .map((k) => {
+        const [z, x, y] = k.split("/").map(Number);
+        return own ? `/api/charts/tile/${k}` : SECTIONAL_LAYER.url(z, x, y);
+      });
     // Plates for every airport on the route: the index, then each chart PDF.
     const pdfs: string[] = [];
     for (const id of route) {
@@ -279,7 +316,7 @@ export function OfflineSave() {
     await start("Route charts and plates", [...tiles, ...new Set(pdfs)]);
   };
 
-  const areaJob = () => {
+  const areaJob = async () => {
     const s = useEfb.getState();
     const el = document.querySelector('svg[aria-label="Moving chart"]');
     const rect = el?.getBoundingClientRect();
@@ -289,7 +326,8 @@ export function OfflineSave() {
     const lonSpan = w / s.pxPerNm / (60 * Math.cos((s.lat * Math.PI) / 180));
     const box = { s: s.lat - latSpan / 2, n: s.lat + latSpan / 2, w: s.lon - lonSpan / 2, e: s.lon + lonSpan / 2 };
     const label = BASE_CHARTS.find((c) => c.id === s.baseChart)?.label ?? "Chart";
-    void start(`${label} for this map area`, regionUrls(s.baseChart, box));
+    const own = s.baseChart === "sectional" || s.baseChart === "tac" ? await serverHasSectional(box) : true;
+    void start(`${label} for this map area`, regionUrls(s.baseChart, box, own));
   };
 
   return (
@@ -960,7 +998,7 @@ export function DataSourcesSheet() {
     },
     { name: "METAR / TAF", source: "aviationweather.gov", status: metars.fetchedAt ? `Map layer ${z(metars.fetchedAt)}` : "On demand", ok: true },
     { name: "Advisories, PIREPs", source: "aviationweather.gov", status: "Every 5 min while shown", ok: true },
-    { name: "Winds aloft", source: "NWS", status: winds.note ? "FB tables ended 3 Nov 2026" : winds.valid ? `Valid ${winds.valid}${winds.stale ? " (last copy)" : ""}` : "When forecast mode is on", ok: winds.note ? false : winds.valid ? !winds.stale : null },
+    { name: "Winds aloft", source: "GFS model via Open-Meteo", status: winds.note ? "FB tables ended 3 Nov 2026" : winds.valid ? `Valid ${winds.valid}${winds.stale ? " (last copy)" : ""}` : "When forecast mode is on", ok: winds.note ? false : winds.valid ? !winds.stale : null },
     { name: "TFRs", source: "tfr.faa.gov", status: tfrs.fetchedAt ? `${tfrs.tfrs.length} active · ${z(tfrs.fetchedAt)}${tfrs.stale ? " (last copy)" : ""}` : "loading…", ok: tfrs.fetchedAt ? !tfrs.stale : null },
     { name: "Radar", source: "NWS NEXRAD via Iowa State Mesonet", status: radar ? `Valid ${z(radar)}` : "—", ok: radar ? true : null },
     { name: "NOTAMs", source: "Host's FAA API key", status: notams === null ? "—" : notams ? "Connected" : "Host has not added a key", ok: notams },

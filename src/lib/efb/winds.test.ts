@@ -48,3 +48,21 @@ test("interpolate", () => {
   assert.equal(w.temp, -3);
   assert.equal(windAt(st, 30, -80, 9000), null);
 });
+
+test("GFS pressure levels become altitude levels", async () => {
+  const { gfsStations, windAt: at } = await import("./winds.ts");
+  const pt = {
+    hourly: {
+      time: ["2026-11-18T21:00", "2026-11-18T22:00"],
+      wind_speed_850hPa: [3.3, 1.0], wind_direction_850hPa: [301, 279], temperature_850hPa: [14.6, 15.3], geopotential_height_850hPa: [1520, 1525],
+      wind_speed_700hPa: [19.6, 15.5], wind_direction_700hPa: [278, 272], temperature_700hPa: [1.1, 1.5], geopotential_height_700hPa: [3069, 3080],
+      wind_speed_600hPa: [42.6, 39.8], wind_direction_600hPa: [279, 274], temperature_600hPa: [-7.7, -7.6], geopotential_height_600hPa: [4380, 4390],
+    },
+  };
+  const st = gfsStations([pt], "2026-11-18T22", [{ lat: 39.6, lon: -104.9 }]);
+  assert.equal(st.length, 1);
+  assert.deepEqual(st[0].levels[10100], { dir: 272, spd: 16, temp: 1.5 });
+  const w = at(st, 39.6, -104.9, 10100)!;
+  assert.equal(w.spd, 16);
+  assert.equal(w.dir, 272);
+});

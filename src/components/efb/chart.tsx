@@ -9,7 +9,7 @@ import { useWeather } from "@/lib/efb/use-weather";
 import { useLive, useWindLookup } from "@/lib/efb/live-store";
 import { useAdsb } from "@/lib/efb/adsb";
 import { firstTerrainConflict, glideRing, offsetNm } from "@/lib/efb/glide";
-import { FAA_LAYERS, RADAR_LAYER, RADAR_META, layerTiles } from "@/lib/efb/layers";
+import { SECTIONAL_LAYER, layerVisible, FAA_LAYERS, RADAR_LAYER, RADAR_META, layerTiles } from "@/lib/efb/layers";
 import { ringContains as tfrContains, type MetarField } from "@/lib/efb/live";
 import type { WxAdvisories, WxArea } from "@/lib/efb/advisories";
 import type { Airport } from "@/lib/efb/types";
@@ -440,6 +440,13 @@ export function Chart() {
       }),
     [lat, lon, size.w, size.h, pxPerNm, sheets, baseChart],
   );
+  // Where this server has no sectional sheet on disk (most hosted deploys), use the FAA sectional tile service.
+  const wantSectional = baseChart === "sectional" || baseChart === "tac";
+  const sectionalFallback = wantSectional && chartTiles.length === 0;
+  const fallbackTiles = useMemo(
+    () => (sectionalFallback ? layerTiles(SECTIONAL_LAYER, lat, lon, size.w, size.h, pxPerNm) : []),
+    [sectionalFallback, lat, lon, size.w, size.h, pxPerNm],
+  );
   const raster = useMemo(() => {
     const pack = (tiles: { z: number; x: number; y: number }[], href: (t: { z: number; x: number; y: number }) => string, opacity: number) => {
       const out: RasterImg[] = [];
@@ -456,11 +463,13 @@ export function Chart() {
       return out;
     };
     return {
-      sectional: pack(chartTiles, (t) => `/api/charts/tile/${t.z}/${t.x}/${t.y}`, 1),
+      sectional: sectionalFallback
+        ? pack(fallbackTiles, (t) => SECTIONAL_LAYER.url(t.z, t.x, t.y), 1)
+        : pack(chartTiles, (t) => `/api/charts/tile/${t.z}/${t.x}/${t.y}`, 1),
       faa: faaLayer ? pack(faaTiles, (t) => faaLayer.url(t.z, t.x, t.y), 1) : [],
       radar: showRadar ? pack(radarTiles, (t) => `${RADAR_LAYER.url(t.z, t.x, t.y)}?t=${radarStamp.key}`, 0.7) : [],
     };
-  }, [chartTiles, faaTiles, faaLayer, radarTiles, showRadar, radarStamp.key]);
+  }, [chartTiles, fallbackTiles, sectionalFallback, faaTiles, faaLayer, radarTiles, showRadar, radarStamp.key]);
 
   useLayoutEffect(() => {
     const wrap = wrapRef.current;
@@ -1305,8 +1314,12 @@ export function Chart() {
         {faaLayer ? (
           <StatusChip tone={faaTiles.length ? "ok" : "wait"}>{`FAA ${faaLayer.label} · current edition`}</StatusChip>
         ) : (
-          <StatusChip tone={chartTiles.length ? "ok" : "wait"}>
-            {cycle ? `Sectional ${cycle}` : "Loading FAA sectional"}
+          <StatusChip tone={chartTiles.length || fallbackTiles.length ? "ok" : "wait"}>
+            {sectionalFallback && !layerVisible(SECTIONAL_LAYER, pxPerNm, lat)
+              ? "Zoom in for the sectional"
+              : cycle
+                ? `Sectional ${cycle}`
+                : "FAA sectional · current edition"}
           </StatusChip>
         )}
         {adsbConnected && (

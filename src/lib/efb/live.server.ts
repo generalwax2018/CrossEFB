@@ -1,6 +1,6 @@
 import { getAirport } from "./airports";
 import { emptyTfrs, type MetarField, type StationWx, type Tfr, type TfrPack } from "./live";
-import { emptyWinds, parseWindText, type WindPack, type WindStation } from "./winds";
+import { GFS_LEVELS, emptyWinds, gfsStations, type GfsPoint, type WindPack } from "./winds";
 
 const UA = { "user-agent": "CrossEFB/1.0 (planning aid)" };
 
@@ -177,35 +177,31 @@ export async function tfrPack(): Promise<TfrPack> {
 /* Winds aloft                                                         */
 /* ------------------------------------------------------------------ */
 
-export async function windPack(fcst: "06" | "12" | "24"): Promise<WindPack> {
+/**
+ * Winds aloft from the GFS model (Open-Meteo), at the given points and hour.
+ * The NWS retired the FB winds/temps tables with the NAM model in Nov 2026.
+ * Pressure levels become altitudes through each level's geopotential height.
+ */
+export async function windPack(points: { lat: number; lon: number }[], at: Date): Promise<WindPack> {
+  const pts = points.slice(0, 12).map((p) => ({ lat: Math.round(p.lat * 4) / 4, lon: Math.round(p.lon * 4) / 4 }));
+  const hourKey = new Date(Math.round(at.getTime() / 3600000) * 3600000).toISOString().slice(0, 13);
+  const key = `gfs:${hourKey}:${pts.map((p) => `${p.lat},${p.lon}`).join(";")}`;
   return cached<WindPack>(
-    `winds:${fcst}`,
-    20 * 60 * 1000,
+    key,
+    30 * 60 * 1000,
     async () => {
-      const url = `https://aviationweather.gov/api/data/windtemp?region=all&level=low&fcst=${fcst}`;
+      if (!pts.length) return { ...emptyWinds, fetchedAt: new Date().toISOString() };
+      const vars = GFS_LEVELS.flatMap((l) => [`wind_speed_${l}hPa`, `wind_direction_${l}hPa`, `temperature_${l}hPa`, `geopotential_height_${l}hPa`]);
+      const url =
+        `https://api.open-meteo.com/v1/gfs?latitude=${pts.map((p) => p.lat).join(",")}&longitude=${pts.map((p) => p.lon).join(",")}` +
+        `&hourly=${vars.join(",")}&wind_speed_unit=kn&timezone=GMT&forecast_days=3`;
       const res = await fetch(url, { signal: AbortSignal.timeout(10000), headers: UA });
-      if (!res.ok) {
-        const text = await res.text();
-        if (text.toLowerCase().includes("discontinued")) {
-          return {
-            stations: [],
-            valid: "",
-            forUse: "",
-            fetchedAt: new Date().toISOString(),
-            stale: false,
-            note: "The NWS ended the FB winds tables on 3 Nov 2026. Use a manual wind. The graphical forecast is on aviationweather.gov.",
-          };
-        }
-        throw new Error(String(res.status));
-      }
-      const parsed = parseWindText(await res.text());
-      const stations: WindStation[] = [];
-      for (const row of parsed.rows) {
-        const a = getAirport(`K${row.id}`) ?? getAirport(`P${row.id}`) ?? getAirport(row.id);
-        if (!a) continue;
-        stations.push({ id: row.id, lat: a.lat, lon: a.lon, levels: row.levels });
-      }
-      return { stations, valid: parsed.valid, forUse: parsed.forUse, fetchedAt: new Date().toISOString(), stale: false };
+      if (!res.ok) throw new Error(String(res.status));
+      const body = (await res.json()) as GfsPoint | GfsPoint[];
+      const list = Array.isArray(body) ? body : [body];
+      const stations = gfsStations(list, hourKey, pts);
+      const valid = `${hourKey.slice(8, 10)}${hourKey.slice(11, 13)}00Z`;
+      return { stations, valid, forUse: "GFS via Open-Meteo", fetchedAt: new Date().toISOString(), stale: false };
     },
     (last) => (last ? { ...last, stale: true } : emptyWinds),
   );

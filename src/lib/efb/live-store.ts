@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { create } from "zustand";
 import { resolveAircraft } from "./aircraft";
+import { getAirport } from "./airports";
 import { emptyTfrs, type MetarField, type TfrPack } from "./live";
 import { buildLegs, type Leg, type WindLookup } from "./nav";
 import { useEfb } from "./store";
@@ -73,23 +74,29 @@ export function LiveFeeds() {
     });
   }, [showTfrs]);
 
-  // Pick the forecast that covers the planned departure.
-  const fcst = useMemo(() => {
+  // Ask for winds at each leg's midpoint, at the planned departure hour.
+  const route = useEfb((s) => s.route);
+  const query = useMemo(() => {
     const now = new Date();
     const dep = new Date(now);
     dep.setHours(departHour, 0, 0, 0);
     if (dep.getTime() < now.getTime() - 60 * 60 * 1000) dep.setDate(dep.getDate() + 1);
-    const hours = (dep.getTime() - now.getTime()) / 3600000;
-    return hours > 15 ? "24" : hours > 6 ? "12" : "06";
-  }, [departHour]);
+    const pts: string[] = [];
+    for (let i = 0; i < route.length - 1 && pts.length < 12; i++) {
+      const a = getAirport(route[i]);
+      const b = getAirport(route[i + 1]);
+      if (a && b) pts.push(`${((a.lat + b.lat) / 2).toFixed(2)},${((a.lon + b.lon) / 2).toFixed(2)}`);
+    }
+    return pts.length ? `pts=${pts.join(";")}&at=${encodeURIComponent(dep.toISOString().slice(0, 13) + ":00:00Z")}` : "";
+  }, [departHour, route]);
 
   useEffect(() => {
-    if (windMode !== "forecast") return;
-    return poll(`/api/wx/winds?fcst=${fcst}`, 30 * 60 * 1000, (b) => {
+    if (windMode !== "forecast" || !query) return;
+    return poll(`/api/wx/winds?${query}`, 30 * 60 * 1000, (b) => {
       const body = b as WindPack;
       if (Array.isArray(body.stations)) useLive.getState().setWinds(body);
     });
-  }, [windMode, fcst]);
+  }, [windMode, query]);
 
   useEffect(() => {
     const apply = () => useLive.getState().setOnline(navigator.onLine);

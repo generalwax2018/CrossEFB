@@ -34,7 +34,7 @@ function requestGuardPlugin(): Plugin {
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com data:",
         "img-src 'self' data: blob:",
-        "connect-src 'self' https://grok.com https://tiles.openfreemap.org https://*.openfreemap.org https://mesonet.agron.iastate.edu",
+        "connect-src 'self' https://grok.com https://tiles.openfreemap.org https://*.openfreemap.org https://mesonet.agron.iastate.edu http://192.168.10.1",
         "worker-src 'self' blob:",
         "object-src 'none'",
         "base-uri 'self'",

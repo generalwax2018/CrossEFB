@@ -169,3 +169,40 @@ export function windAt(stations: WindStation[], lat: number, lon: number, altFt:
   const out = blend(parts);
   return out ? { ...out, stations: used } : null;
 }
+
+/* ------------------------------------------------------------------ */
+/* GFS pressure-level winds (Open-Meteo), which replaced the FB tables */
+/* ------------------------------------------------------------------ */
+
+export const GFS_LEVELS = [925, 850, 700, 600, 500, 400, 300] as const;
+
+export type GfsPoint = { hourly?: Record<string, (number | null)[] | string[]> };
+
+/**
+ * One station per query point. Each pressure level becomes an altitude through
+ * its geopotential height (m → ft), using the hour that matches `hourKey`
+ * ("YYYY-MM-DDTHH").
+ */
+export function gfsStations(list: GfsPoint[], hourKey: string, pts: { lat: number; lon: number }[]): WindStation[] {
+  const stations: WindStation[] = [];
+  list.forEach((pt, i) => {
+    if (!pts[i]) return;
+    const times = (pt.hourly?.time ?? []) as string[];
+    let idx = times.findIndex((t) => t.slice(0, 13) === hourKey);
+    if (idx < 0) idx = 0;
+    const levels: WindStation["levels"] = {};
+    for (const l of GFS_LEVELS) {
+      const get = (name: string) => {
+        const v = (pt.hourly?.[`${name}_${l}hPa`] as (number | null)[] | undefined)?.[idx];
+        return typeof v === "number" && Number.isFinite(v) ? v : null;
+      };
+      const hgt = get("geopotential_height");
+      const spd = get("wind_speed");
+      const dir = get("wind_direction");
+      if (hgt == null || spd == null || dir == null) continue;
+      levels[Math.round((hgt * 3.28084) / 100) * 100] = { dir: Math.round(dir) % 360 || 360, spd: Math.round(spd), temp: get("temperature") };
+    }
+    if (Object.keys(levels).length) stations.push({ id: `GFS${i + 1}`, lat: pts[i].lat, lon: pts[i].lon, levels });
+  });
+  return stations;
+}

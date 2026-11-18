@@ -27,8 +27,12 @@ function take(key, perSec, burst) {
 
 /** @param {Headers} headers */
 export function clientIp(headers) {
-  const fwd = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return fwd || headers.get("x-real-ip") || "local";
+  // Prefer headers the hosting platform sets itself; a client can put anything
+  // at the front of x-forwarded-for, so use it only as a last resort.
+  const platform = headers.get("x-vercel-forwarded-for") || headers.get("cf-connecting-ip") || headers.get("x-real-ip");
+  if (platform) return platform.split(",")[0].trim();
+  const hops = (headers.get("x-forwarded-for") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  return hops[hops.length - 1] || "local";
 }
 
 /** True when this caller should be turned away. */
